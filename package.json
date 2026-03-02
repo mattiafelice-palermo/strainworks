@@ -1,0 +1,11 @@
+{
+  "name": "ldanalyzer",
+  "private": true,
+  "description": "Interactive web UI for load-displacement analysis.",
+  "scripts": {
+    "lint": "eslint webui/static/app.js"
+  },
+  "devDependencies": {
+    "eslint": "^10.0.1"
+  }
+}

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LD Multi-Sample Analyzer</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260302-39" />
+  </head>
+  <body>
+    <div class="appShell sidebarCollapsed">
+      <aside id="appSidebar" class="appSidebar">
+        <button id="appSidebarToggle" class="sidebarBurger" type="button" title="Expand/collapse app menu" aria-label="Expand/collapse app menu">☰</button>
+        <nav class="sidebarNav">
+          <button class="sidebarApp active" type="button" title="LD Analyzer">
+            <span class="sidebarAppIcon">▦</span>
+            <span class="sidebarAppLabel">LD Analyzer</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="app">
+        <header class="topbar">
+          <h1>LD Multi-Sample Analyzer</h1>
+          <div class="tabs">
+            <button class="tabBtn active" data-tab="configTab">Sample Management</button>
+            <button class="tabBtn" data-tab="vizTab">Sample Analysis</button>
+            <button class="tabBtn" data-tab="summaryTab">Summary</button>
+            <button class="tabBtn tabInfoBtn" data-tab="projectInfoTab" title="Project information" aria-label="Project information">i</button>
+          </div>
+          <div class="topbarActions">
+            <label class="autosaveSwitchWrap" title="Autosave project file">
+              <span>Autosave</span>
+              <span class="autosaveSwitch">
+                <input id="projectAutosaveToggle" type="checkbox" />
+                <span class="autosaveSlider"></span>
+              </span>
+            </label>
+            <span id="projectAutosaveStatus" class="autosaveStatus muted">Autosave off</span>
+            <span class="topbarSep" aria-hidden="true">|</span>
+            <button id="newProjectBtn" class="topbarActionBtn iconOnlyBtn" type="button" title="New project" aria-label="New project">📄+</button>
+            <button id="importProjectBtn" class="topbarActionBtn iconOnlyBtn" type="button" title="Import project" aria-label="Import project">⤒</button>
+            <button id="exportProjectBtn" class="topbarActionBtn iconOnlyBtn" type="button" title="Save project as..." aria-label="Save project as...">⤓</button>
+            <button id="updateProjectBtn" class="topbarActionBtn iconOnlyBtn" type="button" title="Update saved project file" aria-label="Update saved project file" disabled>💾</button>
+            <input id="importProjectInput" type="file" accept=".stt,application/zip" hidden />
+          </div>
+        </header>
+
+      <section id="configTab" class="tabPane active">
+        <details class="panel collapsiblePanel" open>
+          <summary>
+            <span class="collapsibleCaret">▸</span>
+            <span>Project Settings</span>
+          </summary>
+          <div class="panelBody">
+            <div class="gridCols">
+              <div class="panel innerSettingsPanel">
+                <h3>Parsing Settings</h3>
+                <div class="grid2">
+                  <label>CSV separator<input id="io_sep" type="text" value=";" /></label>
+                  <label>Quote char<input id="io_quotechar" type="text" value='"' /></label>
+                  <label>Start marker<input id="io_start_marker" type="text" value="Tiempo;Desplazamiento;Fuerza" /></label>
+                  <label>Skip lines after marker<input id="io_skip_lines_after_marker" type="number" value="2" step="1" /></label>
+                  <label>Col time<input id="io_col_time" type="number" value="0" step="1" /></label>
+                  <label>Col displacement<input id="io_col_disp" type="number" value="1" step="1" /></label>
+                  <label>Col force<input id="io_col_force" type="number" value="2" step="1" /></label>
+                </div>
+                <div class="row compact wrap">
+                  <label><input id="io_parse_geom_from_filename" type="checkbox" /> Parse area/thickness from filename</label>
+                </div>
+                <div style="display:flex; gap:8px; align-items:flex-end;">
+                  <label style="display:flex; flex-direction:column; flex:0 0 140px; margin:0;">Filename token separator<input id="io_geom_sep" type="text" value="_" /></label>
+                  <label style="display:flex; flex-direction:column; flex:0 0 140px; margin:0;">Thickness label<input id="io_geom_t_label" type="text" value="T" /></label>
+                  <label style="display:flex; flex-direction:column; flex:0 0 140px; margin:0;">Diameter label<input id="io_geom_d_label" type="text" value="D" /></label>
+                  <label style="display:flex; flex-direction:column; flex:0 0 140px; margin:0;">Area label<input id="io_geom_a_label" type="text" value="A" /></label>
+                </div>
+                <div class="muted">Filename parsing: thickness and diameter in mm, area in cm2 (converted to mm2 internally). If both diameter and area are present, area wins because area is geometry-agnostic, while diameter only applies to discs.</div>
+              </div>
+
+              <div class="panel innerSettingsPanel">
+                <h3>Analysis Settings</h3>
+                <div class="grid3">
+                  <label>Scan Step (points)<input id="an_window_step_n" type="number" step="1" value="10" /></label>
+                  <label>Minimum Window Width (points)<input id="an_min_width_n" type="number" step="1" value="30" /></label>
+                  <label>Maximum Window Width (points)<input id="an_max_width_n" type="number" step="1" value="500" /></label>
+                  <label>Minimum Valid Points Per Fit<input id="an_min_valid_points" type="number" step="1" value="20" /></label>
+                  <label>Default Domain Score Threshold<input id="an_domain_threshold_default" type="number" step="any" value="0.80" /></label>
+                  <label>Global Diameter (mm)<input id="an_diameter_mm" type="number" step="any" value="12" /></label>
+                  <label>Global Area (mm2)<input id="an_area_mm2" type="number" step="any" value="" /></label>
+                  <label>Global Thickness (mm)<input id="an_thickness_mm" type="number" step="any" value="3" /></label>
+                </div>
+                <div class="row compact">
+                  <label><input id="an_require_positive_slope" type="checkbox" checked /> Enforce Positive Fit Slope</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="panel">
+          <h2>Samples & Replicas</h2>
+          <div class="row">
+            <input id="newSampleName" type="text" placeholder="Sample name (e.g. Gel_A_5%)" />
+            <button id="addSampleBtn">Add Sample</button>
+            <button id="expandAllSamplesBtn" type="button">Expand All</button>
+            <button id="collapseAllSamplesBtn" type="button">Collapse All</button>
+            <button id="precomputeAllBtn">Precompute All</button>
+          </div>
+          <div class="row compact wrap">
+            <label><input id="autoPrecomputeOnUpload" type="checkbox" checked /> Auto-precompute on upload</label>
+            <label><input id="includeHeatmapInExport" type="checkbox" checked /> Include heatmap grids in project export</label>
+            <span id="precomputeInfo" class="muted"></span>
+          </div>
+          <div id="samplesList" class="samplesList"></div>
+        </div>
+      </section>
+
+      <section id="vizTab" class="tabPane">
+        <div class="vizLayout">
+          <div class="panel vizControlsPanel">
+            <div class="row wrap">
+              <label>Sample
+                <select id="vizSampleSelect"></select>
+              </label>
+              <label>Replica
+                <select id="vizReplicaSelect"></select>
+              </label>
+              <span id="vizInfo" class="muted"></span>
+            </div>
+
+            <div class="row wrap">
+              <label style="flex:1;">Domain score threshold
+                <input id="domainThreshold" type="range" min="0.50" max="0.999" step="0.001" value="0.80" />
+                <span id="domainThresholdValue" class="mono">0.800</span>
+              </label>
+              <button id="detectDomainsBtn">Detect Domains</button>
+            </div>
+
+            <label>Window center index
+              <input id="centerSlider" type="range" min="0" max="0" value="0" step="1" />
+              <span id="centerLabel" class="mono"></span>
+            </label>
+
+            <label>Window size (points)
+              <input id="widthSlider" type="range" min="3" max="3" value="3" step="1" />
+              <span id="widthLabel" class="mono"></span>
+            </label>
+
+            <div class="row compact">
+              <label><input id="plotUseStressStrain" type="checkbox" /> Stress/strain view</label>
+            </div>
+
+            <div class="maxToolPanel">
+              <h3>Compressive Strength</h3>
+              <label>Mode
+                <select id="maxMode">
+                  <option value="global">Global max</option>
+                  <option value="window">Max in sliding window</option>
+                  <option value="point">Single point</option>
+                </select>
+              </label>
+
+              <div id="maxWindowControls">
+                <label>Max window center index
+                  <input id="maxCenterSlider" type="range" min="0" max="0" value="0" step="1" />
+                  <span id="maxCenterLabel" class="mono"></span>
+                </label>
+                <label>Max window size (points)
+                  <input id="maxWidthSlider" type="range" min="1" max="1" value="1" step="1" />
+                  <span id="maxWidthLabel" class="mono"></span>
+                </label>
+              </div>
+
+              <div id="maxPointControls" class="hidden">
+                <label>Point index
+                  <input id="maxPointSlider" type="range" min="0" max="0" value="0" step="1" />
+                  <span id="maxPointLabel" class="mono"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="maxToolPanel">
+              <h3>Toe Region</h3>
+              <label><input id="showD2" type="checkbox" /> Show second derivative</label>
+              <label><input id="toeEnabled" type="checkbox" /> Enable toe-end selector</label>
+              <label><input id="hideBeforeToe" type="checkbox" /> Trim before toe-end (rebase x to 0)</label>
+              <label>Mode
+                <select id="toeMode">
+                  <option value="global">Auto toe (peak+baseline threshold)</option>
+                  <option value="point">Single point</option>
+                </select>
+              </label>
+
+              <div id="toePointControls" class="hidden">
+                <label>Toe point index
+                  <input id="toePointSlider" type="range" min="0" max="0" value="0" step="1" />
+                  <span id="toePointLabel" class="mono"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="metrics" id="metrics"></div>
+
+            <div id="domainsPanel" class="domainsPanel">
+              <div class="domainsHeader">
+                <span id="domainsSummary">Domains summary</span>
+                <button id="toggleDomainsBtn" type="button">Hide</button>
+              </div>
+              <div id="domainsTableWrap" class="domainsTableWrap">
+                <table class="domainsTable">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Cells</th>
+                      <th>Frac</th>
+                      <th>Score mean</th>
+                      <th>Score max</th>
+                      <th>Range (mm)</th>
+                      <th>R2</th>
+                      <th>relRMSE</th>
+                      <th>E (MPa)</th>
+                    </tr>
+                  </thead>
+                  <tbody id="domainsTbody">
+                    <tr><td colspan="9">No domains detected yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel plotPanel">
+            <div class="plotStack">
+              <div class="plotBox">
+                <h3 class="plotTitle">Load-Displacement Curve</h3>
+                <div class="plotWrap">
+                  <canvas id="plotCanvas"></canvas>
+                </div>
+              </div>
+              <div class="plotBox">
+                <h3 class="plotTitle">Linearity Score Heatmap</h3>
+                <div class="heatmapWrap">
+                  <!-- Legacy canvas heatmap renderer kept in app.js as fallback -->
+                  <!-- <canvas id="heatmapCanvas"></canvas> -->
+                  <div id="heatmapPlot"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="summaryTab" class="tabPane">
+        <div class="panel">
+          <div class="row">
+            <span id="summaryInfo" class="muted"></span>
+          </div>
+          <div class="row wrap">
+            <button id="exportReplicaCsvBtn" type="button">Export All Files CSV</button>
+            <button id="exportSampleCsvBtn" type="button">Export Sample Averages CSV</button>
+            <button id="exportSummaryExcelBtn" type="button">Export Both Tables Excel</button>
+            <label><input id="summaryShowFitDetails" type="checkbox" /> Show fit diagnostics (width/range/score/R2/relRMSE)</label>
+          </div>
+
+          <h3 class="sectionTitle">Replica Results</h3>
+          <div class="tableWrap">
+            <table class="summaryTable" id="replicaTable">
+              <thead>
+                <tr id="replicaHeadRow"></tr>
+              </thead>
+              <tbody id="replicaTbody"><tr><td colspan="17">No summary computed.</td></tr></tbody>
+            </table>
+          </div>
+
+          <h3 class="sectionTitle">Sample Aggregates (mean +- SEM)</h3>
+          <div class="tableWrap">
+            <table class="summaryTable" id="sampleTable">
+              <thead>
+                <tr id="sampleHeadRow"></tr>
+              </thead>
+              <tbody id="sampleTbody"><tr><td colspan="15">No summary computed.</td></tr></tbody>
+            </table>
+          </div>
+
+          <h3 class="sectionTitle">Metric Explorer (Sample Aggregates)</h3>
+          <div class="metricExplorerPanel">
+            <div class="row compact wrap">
+              <label>Metric
+                <select id="metricExplorerMetric"></select>
+              </label>
+              <label>Style
+                <select id="metricExplorerStyle">
+                  <option value="dot">Dot + SEM</option>
+                  <option value="bar">Bar + SEM</option>
+                </select>
+              </label>
+              <button id="newMetricPlotBtn" type="button">New Plot</button>
+              <button id="updateMetricPlotBtn" type="button" disabled>Update Plot</button>
+            </div>
+            <div class="metricExplorerMain">
+              <div id="metricExplorerPlotWrap" class="metricExplorerPlotWrap">
+                <div id="metricExplorerPlot"></div>
+                <div id="metricExplorerResizeRight" class="metricExplorerHandle right" title="Resize width"></div>
+                <div id="metricExplorerResizeBottom" class="metricExplorerHandle bottom" title="Resize height"></div>
+              </div>
+              <aside class="metricExplorerSettings">
+                <h4>Plot settings</h4>
+                <label>Sample order
+                  <select id="metricExplorerSort">
+                    <option value="original">Original order</option>
+                    <option value="mean_desc">Mean (high to low)</option>
+                    <option value="mean_asc">Mean (low to high)</option>
+                  </select>
+                </label>
+                <label><input id="metricExplorerZeroY" type="checkbox" checked /> Start Y axis at 0</label>
+                <label><input id="metricExplorerShowGrid" type="checkbox" checked /> Show Y grid</label>
+                <label><input id="metricExplorerShowLabels" type="checkbox" /> Show value labels</label>
+                <div class="row compact wrap">
+                  <button id="metricExplorerDownloadSvgBtn" type="button">Download SVG</button>
+                  <button id="metricExplorerDownloadCsvBtn" type="button">Download CSV</button>
+                </div>
+              </aside>
+            </div>
+            <div id="pinnedMetricPlots" class="pinnedMetricPlots"></div>
+          </div>
+
+          <h3 class="sectionTitle">All Load-Displacement Curves</h3>
+          <div class="summaryPlotGrid">
+            <div id="summaryPlotWrap" class="summaryPlotWrap">
+              <div id="summaryPlot"></div>
+              <div id="summaryLegendTab" class="summaryLegendTab" title="Toggle legend">◂ Legend</div>
+              <div id="summaryPlotResizeRight" class="metricExplorerHandle right" title="Resize width"></div>
+              <div id="summaryPlotResizeBottom" class="metricExplorerHandle bottom" title="Resize height"></div>
+            </div>
+            <aside class="summaryPlotSettings">
+              <h4>Plot settings</h4>
+              <label><input id="summaryShowToeRegion" type="checkbox" /> Include toe region</label>
+              <label><input id="summaryUseStressStrain" type="checkbox" /> Stress/strain view</label>
+              <label><input id="summaryUseSampleAverage" type="checkbox" /> One curve per sample (mean)</label>
+              <label><input id="summaryShowAverageShadow" type="checkbox" /> Show error shadow (SEM)</label>
+              <label>Line thickness
+                <div class="lineWidthControl">
+                  <input id="summaryLineWidth" type="range" min="0.8" max="6.0" step="0.1" value="1.8" />
+                  <input id="summaryLineWidthValue" type="number" min="0.8" max="6.0" step="0.1" value="1.8" />
+                </div>
+              </label>
+              <div class="row compact wrap">
+                <button id="downloadSummaryPlotSvgBtn" type="button">Download Plot SVG</button>
+                <button id="downloadSummaryPlotCsvBtn" type="button">Download Plot Excel</button>
+                <button id="downloadSummaryPlotZipBtn" type="button">Download Plot Package (.zip)</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="projectInfoTab" class="tabPane">
+        <div class="panel">
+          <h2>Project Information</h2>
+          <div id="projectInfoContent" class="projectInfoContent muted">No project information yet.</div>
+        </div>
+      </section>
+      </main>
+    </div>
+
+    <div id="sampleColorPickerPopover" class="sampleColorPickerPopover hidden" role="dialog" aria-label="Sample color picker">
+      <div class="sampleColorPickerBody">
+        <div class="sampleColorPickerTitle">Sample color</div>
+        <canvas id="sampleColorPickerSurface" width="210" height="160"></canvas>
+        <label>Lightness
+          <input id="sampleColorPickerLightness" type="range" min="15" max="90" step="1" value="72" />
+        </label>
+        <label>Hex color
+          <input id="sampleColorPickerHex" type="text" value="#88ccaa" maxlength="7" />
+        </label>
+        <div class="row compact wrap">
+          <button id="sampleColorPickerApplyBtn" type="button">Apply</button>
+          <button id="sampleColorPickerCancelBtn" type="button" class="topbarActionBtn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script src="/static/app.js?v=20260302-39"></script>
+  </body>
+</html>

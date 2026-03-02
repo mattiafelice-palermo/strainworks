@@ -1,0 +1,1270 @@
+:root {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --line: #d8dee4;
+  --text: #1f2933;
+  --muted: #52606d;
+  --accent: #1769aa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.appShell {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.appShell.sidebarCollapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.appShell:not(.sidebarCollapsed) {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.appSidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-right: 1px solid var(--line);
+  background: #ffffff;
+  padding: 8px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  z-index: 220;
+}
+
+.sidebarBurger {
+  width: 40px;
+  height: 36px;
+  min-width: 40px;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sidebarNav {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebarApp {
+  width: 100%;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+  padding: 8px 10px;
+}
+
+.sidebarApp.active {
+  background: #edf5ff;
+  border-color: #bfdbfe;
+}
+
+.sidebarAppIcon {
+  width: 18px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.sidebarAppLabel {
+  white-space: nowrap;
+}
+
+.appShell.sidebarCollapsed .sidebarApp {
+  justify-content: center;
+  padding: 8px 6px;
+}
+
+.appShell.sidebarCollapsed .sidebarAppLabel {
+  display: none;
+}
+
+.app {
+  padding: 12px;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.topbarActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.topbarSep {
+  color: #9aa5b1;
+  user-select: none;
+}
+
+.autosaveSwitchWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.autosaveSwitch {
+  position: relative;
+  width: 42px;
+  height: 22px;
+  display: inline-block;
+}
+
+.autosaveSwitch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.autosaveSlider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #d1d9e0;
+  border: 1px solid #c2cbd4;
+  transition: background-color 0.15s ease;
+}
+
+.autosaveSlider::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #c2cbd4;
+  transition: transform 0.15s ease;
+}
+
+.autosaveSwitch input:checked + .autosaveSlider {
+  background: #1769aa;
+  border-color: #1769aa;
+}
+
+.autosaveSwitch input:checked + .autosaveSlider::before {
+  transform: translateX(20px);
+}
+
+.autosaveSwitch input:disabled + .autosaveSlider {
+  opacity: 0.5;
+}
+
+.autosaveStatus {
+  min-width: 230px;
+}
+
+.topbarActionBtn {
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.topbarActionBtn:hover {
+  background: #f7fafc;
+  filter: none;
+}
+
+.topbarActionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.iconOnlyBtn {
+  width: 36px;
+  height: 34px;
+  min-width: 36px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tabBtn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.tabBtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.tabInfoBtn {
+  width: 34px;
+  min-width: 34px;
+  padding: 7px 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+.tabPane {
+  display: none;
+}
+
+.tabPane.active {
+  display: block;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.panel h2, .panel h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.innerSettingsPanel {
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  margin-top: 16px !important;
+  margin-bottom: 10px !important;
+}
+
+.collapsiblePanel {
+  padding: 0;
+}
+
+.collapsiblePanel > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  border-bottom: 1px solid transparent;
+}
+
+.collapsiblePanel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsiblePanel[open] > summary {
+  border-bottom-color: var(--line);
+}
+
+.collapsibleCaret {
+  display: inline-block;
+  width: 10px;
+}
+
+.collapsiblePanel[open] .collapsibleCaret {
+  transform: rotate(90deg);
+}
+
+.panelBody {
+  padding: 10px 12px 12px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+}
+
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+input[type="range"] {
+  width: 100%;
+  margin-top: 6px;
+}
+
+button {
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(0.95); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.row.wrap { flex-wrap: wrap; }
+.row.compact { margin-top: 8px; margin-bottom: 0; }
+
+.gridCols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.geomParseRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.geomParseCell {
+  margin: 0;
+  min-width: 0;
+}
+.geomParseCellWide {
+  flex: 1.7 1 0;
+}
+.geomParseCellMid {
+  flex: 1.15 1 0;
+}
+.geomParseCellNarrow {
+  flex: 0.75 1 0;
+}
+
+.muted { color: var(--muted); font-size: 12px; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.geoInputDisabled {
+  background: #f1f5f9 !important;
+  color: var(--muted);
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.samplesList {
+  display: grid;
+  gap: 8px;
+}
+
+.sampleCard {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.sampleBody.collapsed {
+  display: none;
+}
+
+.sampleHeader {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.sampleHeader strong { font-size: 14px; }
+
+.sampleHeaderActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.sampleColorBtn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.sampleColorSwatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  display: block;
+}
+
+.sampleColorPickerPopover {
+  position: fixed;
+  z-index: 400;
+  min-width: 240px;
+  max-height: calc(100vh - 16px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+  padding: 10px;
+  overflow: auto;
+}
+
+.sampleColorPickerBody {
+  display: grid;
+  gap: 8px;
+}
+
+.sampleColorPickerTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+#sampleColorPickerSurface {
+  width: 210px;
+  height: 160px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: crosshair;
+  display: block;
+}
+
+.sampleHeaderToggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  background: #eef3fb;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.sampleHeaderToggle:hover {
+  filter: brightness(0.98);
+}
+
+.sampleChevron {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  width: 10px;
+}
+
+.sampleTitle {
+  font-weight: 600;
+}
+
+.iconBtn {
+  min-width: 34px;
+  padding: 6px 8px;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.iconBtn:hover {
+  background: #f7fafc;
+  filter: none;
+}
+
+.sampleComments {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.sampleCommentsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.sampleCommentsHeader strong {
+  font-size: 13px;
+}
+
+.commentForm {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+.sampleCommentsList {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 220px;
+}
+
+.sampleCommentsList.collapsed {
+  display: none;
+}
+
+.sampleCommentsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.sampleCommentsTable th,
+.sampleCommentsTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.sampleCommentsTable td.commentTextCell {
+  white-space: pre-wrap;
+}
+
+.replicaList {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.replicaList th, .replicaList td {
+  border-bottom: 1px solid var(--line);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--line);
+}
+
+.status-ok { background: #e9f7ef; color: #166534; border-color: #86efac; }
+.status-err { background: #fdecec; color: #991b1b; border-color: #fca5a5; }
+.status-run { background: #eef3ff; color: #1d4ed8; border-color: #93c5fd; }
+.status-none { background: #f4f6f8; color: #52606d; border-color: #d8dee4; }
+
+.plotPanel {
+  padding: 10px;
+}
+
+.vizLayout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  align-items: start;
+  gap: 12px;
+}
+
+.vizControlsPanel {
+  margin-bottom: 0;
+}
+
+.plotStack {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plotBox {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.plotTitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.plotWrap,
+.heatmapWrap {
+  min-height: 0;
+}
+
+.plotWrap {
+  height: 420px;
+}
+
+.heatmapWrap {
+  width: 100%;
+  height: 320px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+#plotCanvas,
+#heatmapCanvas,
+#heatmapPlot {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+#heatmapPlot {
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  contain: layout paint;
+}
+
+#heatmapPlot .js-plotly-plot,
+#heatmapPlot .plot-container,
+#heatmapPlot .svg-container,
+#heatmapPlot .main-svg {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden !important;
+}
+
+#plotCanvas,
+#heatmapCanvas,
+#heatmapPlot {
+  height: 100%;
+}
+
+.metrics {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.maxToolPanel {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.maxToolPanel h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.derivToolPanel {
+  margin-top: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.derivToolPanel h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.domainsPanel {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.domainsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.domainsHeader span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.domainsTableWrap {
+  overflow: auto;
+  max-height: 260px;
+  border-top: 1px solid var(--line);
+}
+
+.domainsPanel.collapsed .domainsTableWrap { display: none; }
+
+.domainsTable,
+.summaryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.domainsTable th,
+.domainsTable td,
+.summaryTable th,
+.summaryTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.domainsTable tbody tr:hover,
+.summaryTable tbody tr:hover {
+  background: #f7fafc;
+}
+
+.summaryTable tr.sampleSep td {
+  border-top: 2px solid #7b8794;
+}
+
+.tableWrap {
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.metricExplorerPanel {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 12px;
+  --metricExplorerPlotW: 760px;
+}
+
+.metricExplorerMain {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.metricExplorerPlotWrap {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  height: 570px;
+  width: var(--metricExplorerPlotW, 760px);
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+  position: relative;
+  cursor: default;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+#metricExplorerPlot {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.metricExplorerHandle {
+  position: absolute;
+  z-index: 6;
+  background: transparent;
+}
+
+.metricExplorerHandle.right {
+  top: 50%;
+  right: 0;
+  width: 14px;
+  height: 44px;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+
+.metricExplorerHandle.bottom {
+  left: 50%;
+  bottom: 0;
+  width: 44px;
+  height: 14px;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+
+.metricExplorerHandle.right::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 6px;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(71, 85, 105, 0.85) 0 1px,
+      transparent 1px 4px
+    );
+  opacity: 0.95;
+}
+
+.metricExplorerHandle.bottom::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(71, 85, 105, 0.85) 0 1px,
+      transparent 1px 4px
+    );
+  opacity: 0.95;
+}
+
+.metricExplorerResizeGhost {
+  position: fixed;
+  z-index: 9999;
+  border: 2px dashed #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+  border-radius: 6px;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.metricExplorerSettings {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.metricExplorerSettings h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.metricExplorerSettings label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.pinnedMetricPlots {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 220px);
+  grid-auto-rows: 220px;
+  gap: 8px;
+  justify-content: start;
+}
+
+.pinnedMetricCard {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  height: 220px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pinnedMetricCard:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.pinnedMetricCard.activePin {
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.25);
+}
+
+.pinnedMetricHead {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  user-select: none;
+}
+
+.pinnedMetricTitle {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removePinnedMetricPlotBtn {
+  border: 1px solid #ef9a9a;
+  background: #fff1f2;
+  color: #9f1239;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.removePinnedMetricPlotBtn:hover {
+  background: #ffe4e6;
+}
+
+.pinnedMetricBody {
+  padding: 0 8px 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pinnedMetricPlot {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  height: 100%;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.summaryPlotGrid {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.summaryPlotWrap {
+  --summaryPlotW: 900px;
+  width: var(--summaryPlotW, 900px);
+  max-width: 100%;
+  min-width: 0;
+  height: 540px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  position: relative;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+#summaryPlot {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.summaryLegendTab {
+  position: absolute;
+  right: -1px;
+  top: 64px;
+  transform: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  background: #eef2f7;
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  padding: 8px 5px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  z-index: 5;
+}
+
+.summaryLegendTab:hover {
+  background: #e2e8f0;
+}
+
+.lineWidthControl {
+  display: grid;
+  grid-template-columns: 170px 72px;
+  gap: 8px;
+  align-items: center;
+  max-width: 260px;
+}
+
+.lineWidthControl input[type="range"] {
+  width: 170px;
+}
+
+#summaryLineWidthValue {
+  margin-top: 0;
+}
+
+.summaryPlotSettings {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.summaryPlotSettings h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.projectInfoContent {
+  padding: 0;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.projectInfoLayout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.projectInfoCol {
+  display: grid;
+  gap: 10px;
+}
+
+.projectInfoCommentsFull {
+  margin-top: 10px;
+}
+
+.projectInfoGrid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+.projectInfoSection {
+  margin: 0;
+}
+
+.projectInfoGeek {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.projectInfoSection > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.projectInfoSection > summary::-webkit-details-marker {
+  display: none;
+}
+
+.projectInfoSection h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.projectInfoContent .panel > h4 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.projectInfoContent .collapsiblePanel > summary {
+  font-size: 16px;
+  color: var(--text);
+}
+
+.projectInfoContent .panel {
+  background: #fbfcfe;
+}
+
+.projectMetaForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.projectMetaForm .metaWide {
+  grid-column: 1 / -1;
+}
+
+.projectCommentForm {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 980px) {
+  .appShell,
+  .appShell.sidebarCollapsed,
+  .appShell:not(.sidebarCollapsed) {
+    grid-template-columns: 1fr;
+  }
+  .appSidebar {
+    position: sticky;
+    top: 0;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    grid-template-columns: auto 1fr;
+    align-items: center;
+  }
+  .appShell.sidebarCollapsed .sidebarAppLabel {
+    display: inline;
+  }
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .topbarActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .gridCols,
+  .grid3,
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+  .commentForm {
+    grid-template-columns: 1fr;
+  }
+  .projectCommentForm {
+    grid-template-columns: 1fr;
+  }
+  .projectInfoLayout {
+    grid-template-columns: 1fr;
+  }
+  .projectMetaForm {
+    grid-template-columns: 1fr;
+  }
+  .vizLayout {
+    grid-template-columns: 1fr;
+  }
+  .plotStack {
+    grid-template-rows: auto auto;
+  }
+  .plotWrap {
+    height: 320px;
+  }
+  .heatmapWrap {
+    height: 260px;
+  }
+  .summaryPlotGrid {
+    grid-template-columns: 1fr;
+  }
+  .summaryPlotWrap {
+    width: 100%;
+    height: 430px;
+  }
+  .summaryPlotSettings {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .metricExplorerMain {
+    grid-template-columns: 1fr;
+  }
+  .metricExplorerPlotWrap {
+    width: 100%;
+    height: 430px;
+  }
+  .metricExplorerSettings {
+    grid-template-columns: 1fr 1fr;
+    height: auto;
+  }
+  .pinnedMetricPlots {
+    grid-template-columns: repeat(auto-fill, 180px);
+    grid-auto-rows: 180px;
+  }
+  .pinnedMetricCard {
+    width: 180px;
+    height: 180px;
+  }
+}
+
+@media (max-width: 640px) {
+  .geomParseRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
