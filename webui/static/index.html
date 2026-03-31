@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LD Multi-Sample Analyzer</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260302-39" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260331-49" />
   </head>
   <body>
     <div class="appShell sidebarCollapsed">
@@ -304,19 +304,85 @@
               </div>
               <aside class="metricExplorerSettings">
                 <h4>Plot settings</h4>
-                <label>Sample order
-                  <select id="metricExplorerSort">
-                    <option value="original">Original order</option>
-                    <option value="mean_desc">Mean (high to low)</option>
-                    <option value="mean_asc">Mean (low to high)</option>
-                  </select>
-                </label>
-                <label><input id="metricExplorerZeroY" type="checkbox" checked /> Start Y axis at 0</label>
-                <label><input id="metricExplorerShowGrid" type="checkbox" checked /> Show Y grid</label>
-                <label><input id="metricExplorerShowLabels" type="checkbox" /> Show value labels</label>
-                <div class="row compact wrap">
-                  <button id="metricExplorerDownloadSvgBtn" type="button">Download SVG</button>
-                  <button id="metricExplorerDownloadCsvBtn" type="button">Download CSV</button>
+                <div class="settingsTabs" data-settings-tabs="metricExplorer">
+                  <button type="button" class="settingsTabBtn active" data-settings-pane="display">Display</button>
+                  <button type="button" class="settingsTabBtn" data-settings-pane="typography">Typography</button>
+                </div>
+                <div class="settingsTabPane active" data-settings-content="metricExplorer" data-settings-pane="display">
+                  <label>Sample order
+                    <select id="metricExplorerSort">
+                      <option value="original">Original order</option>
+                      <option value="mean_desc">Mean (high to low)</option>
+                      <option value="mean_asc">Mean (low to high)</option>
+                    </select>
+                  </label>
+                  <label><input id="metricExplorerZeroY" type="checkbox" checked /> Start Y axis at 0</label>
+                  <label><input id="metricExplorerShowGrid" type="checkbox" checked /> Show Y grid</label>
+                  <label><input id="metricExplorerShowLabels" type="checkbox" /> Show value labels</label>
+                  <div class="row compact wrap">
+                    <button id="metricExplorerDownloadSvgBtn" type="button">Download SVG</button>
+                    <button id="metricExplorerDownloadCsvBtn" type="button">Download CSV</button>
+                  </div>
+                </div>
+                <div class="settingsTabPane" data-settings-content="metricExplorer" data-settings-pane="typography">
+                  <div class="typographyGrid">
+                    <label class="typographyFull">Font family
+                      <select id="metricExplorerFontFamily">
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                        <option value="'Helvetica Neue', Arial, sans-serif">Helvetica Neue</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Times New Roman', serif">Times New Roman</option>
+                        <option value="'Courier New', monospace">Courier New</option>
+                      </select>
+                    </label>
+                    <div class="fontSizeRow">
+                      <label class="typographyGlobalControl">
+                        <span class="typographySwitchRow">
+                          <span>Global font size</span>
+                          <span class="autosaveSwitch">
+                            <input id="metricExplorerUseGlobalFontSize" type="checkbox" checked />
+                            <span class="autosaveSlider"></span>
+                          </span>
+                        </span>
+                        <div class="fontSizeCombo">
+                          <input id="metricExplorerGlobalFontSize" type="text" inputmode="numeric" value="14" />
+                          <button type="button" class="fontSizeComboToggle" aria-label="Choose global font size">▾</button>
+                          <div class="fontSizeComboMenu" hidden></div>
+                        </div>
+                      </label>
+                      <label class="fontSizeSpecificControl">Tick font size (px)
+                        <div class="fontSizeCombo">
+                          <input id="metricExplorerTickFontSize" type="text" inputmode="numeric" value="12" />
+                          <button type="button" class="fontSizeComboToggle" aria-label="Choose tick font size">▾</button>
+                          <div class="fontSizeComboMenu" hidden></div>
+                        </div>
+                      </label>
+                      <label class="fontSizeSpecificControl">Title font size (px)
+                        <div class="fontSizeCombo">
+                          <input id="metricExplorerTitleFontSize" type="text" inputmode="numeric" value="17" />
+                          <button type="button" class="fontSizeComboToggle" aria-label="Choose title font size">▾</button>
+                          <div class="fontSizeComboMenu" hidden></div>
+                        </div>
+                      </label>
+                      <label class="fontSizeSpecificControl">Axis title font size (px)
+                        <div class="fontSizeCombo">
+                          <input id="metricExplorerAxisTitleFontSize" type="text" inputmode="numeric" value="14" />
+                          <button type="button" class="fontSizeComboToggle" aria-label="Choose axis title font size">▾</button>
+                          <div class="fontSizeComboMenu" hidden></div>
+                        </div>
+                      </label>
+                    </div>
+                    <label>Plot title
+                      <input id="metricExplorerTitleText" type="text" placeholder="Default metric title" />
+                    </label>
+                    <label>X-axis label
+                      <input id="metricExplorerXAxisLabel" type="text" value="Sample" />
+                    </label>
+                    <label>Y-axis label
+                      <input id="metricExplorerYAxisLabel" type="text" placeholder="Default metric label" />
+                    </label>
+                  </div>
                 </div>
               </aside>
             </div>
@@ -333,20 +399,86 @@
             </div>
             <aside class="summaryPlotSettings">
               <h4>Plot settings</h4>
-              <label><input id="summaryShowToeRegion" type="checkbox" /> Include toe region</label>
-              <label><input id="summaryUseStressStrain" type="checkbox" /> Stress/strain view</label>
-              <label><input id="summaryUseSampleAverage" type="checkbox" /> One curve per sample (mean)</label>
-              <label><input id="summaryShowAverageShadow" type="checkbox" /> Show error shadow (SEM)</label>
-              <label>Line thickness
-                <div class="lineWidthControl">
-                  <input id="summaryLineWidth" type="range" min="0.8" max="6.0" step="0.1" value="1.8" />
-                  <input id="summaryLineWidthValue" type="number" min="0.8" max="6.0" step="0.1" value="1.8" />
+              <div class="settingsTabs" data-settings-tabs="summaryPlot">
+                <button type="button" class="settingsTabBtn active" data-settings-pane="display">Display</button>
+                <button type="button" class="settingsTabBtn" data-settings-pane="typography">Typography</button>
+              </div>
+              <div class="settingsTabPane active" data-settings-content="summaryPlot" data-settings-pane="display">
+                <label><input id="summaryShowToeRegion" type="checkbox" /> Include toe region</label>
+                <label><input id="summaryUseStressStrain" type="checkbox" /> Stress/strain view</label>
+                <label><input id="summaryUseSampleAverage" type="checkbox" /> One curve per sample (mean)</label>
+                <label><input id="summaryShowAverageShadow" type="checkbox" /> Show error shadow (SEM)</label>
+                <label>Line thickness
+                  <div class="lineWidthControl">
+                    <input id="summaryLineWidth" type="range" min="0.8" max="6.0" step="0.1" value="1.8" />
+                    <input id="summaryLineWidthValue" type="number" min="0.8" max="6.0" step="0.1" value="1.8" />
+                  </div>
+                </label>
+                <div class="row compact wrap">
+                  <button id="downloadSummaryPlotSvgBtn" type="button">Download Plot SVG</button>
+                  <button id="downloadSummaryPlotCsvBtn" type="button">Download Plot Excel</button>
+                  <button id="downloadSummaryPlotZipBtn" type="button">Download Plot Package (.zip)</button>
                 </div>
-              </label>
-              <div class="row compact wrap">
-                <button id="downloadSummaryPlotSvgBtn" type="button">Download Plot SVG</button>
-                <button id="downloadSummaryPlotCsvBtn" type="button">Download Plot Excel</button>
-                <button id="downloadSummaryPlotZipBtn" type="button">Download Plot Package (.zip)</button>
+              </div>
+              <div class="settingsTabPane" data-settings-content="summaryPlot" data-settings-pane="typography">
+                <div class="typographyGrid">
+                  <label class="typographyFull">Font family
+                    <select id="summaryFontFamily">
+                      <option value="Arial, sans-serif">Arial</option>
+                      <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                      <option value="'Helvetica Neue', Arial, sans-serif">Helvetica Neue</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="'Times New Roman', serif">Times New Roman</option>
+                      <option value="'Courier New', monospace">Courier New</option>
+                    </select>
+                  </label>
+                  <div class="fontSizeRow">
+                    <label class="typographyGlobalControl">
+                      <span class="typographySwitchRow">
+                        <span>Global font size</span>
+                        <span class="autosaveSwitch">
+                          <input id="summaryUseGlobalFontSize" type="checkbox" checked />
+                          <span class="autosaveSlider"></span>
+                        </span>
+                      </span>
+                      <div class="fontSizeCombo">
+                        <input id="summaryGlobalFontSize" type="text" inputmode="numeric" value="14" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose global font size">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
+                    </label>
+                    <label class="fontSizeSpecificControl">Tick font size (px)
+                      <div class="fontSizeCombo">
+                        <input id="summaryTickFontSize" type="text" inputmode="numeric" value="12" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose tick font size">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
+                    </label>
+                    <label class="fontSizeSpecificControl">Title font size (px)
+                      <div class="fontSizeCombo">
+                        <input id="summaryTitleFontSize" type="text" inputmode="numeric" value="18" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose title font size">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
+                    </label>
+                    <label class="fontSizeSpecificControl">Axis title font size (px)
+                      <div class="fontSizeCombo">
+                        <input id="summaryAxisTitleFontSize" type="text" inputmode="numeric" value="14" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose axis title font size">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
+                    </label>
+                  </div>
+                  <label>Plot title
+                    <input id="summaryTitleText" type="text" value="All Load-Displacement Curves" />
+                  </label>
+                  <label>X-axis label
+                    <input id="summaryXAxisLabel" type="text" placeholder="Default x-axis label" />
+                  </label>
+                  <label>Y-axis label
+                    <input id="summaryYAxisLabel" type="text" placeholder="Default y-axis label" />
+                  </label>
+                </div>
               </div>
             </aside>
           </div>
@@ -380,6 +512,6 @@
     </div>
 
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="/static/app.js?v=20260302-39"></script>
+    <script src="/static/app.js?v=20260331-51"></script>
   </body>
 </html>

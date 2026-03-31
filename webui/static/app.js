@@ -27,7 +27,17 @@ const state = {
       y_zero: true,
       show_grid: true,
       show_labels: false,
+      use_global_font_size: true,
+      global_font_size_px: 14,
+      font_family: 'Arial, sans-serif',
+      tick_font_size_px: 12,
+      title_font_size_px: 17,
+      axis_title_font_size_px: 14,
+      title_text: null,
+      x_axis_label: 'Sample',
+      y_axis_label: null,
       plot_width_px: 760,
+      plot_height_px: 570,
     },
     pinned: [],
     active_pin_id: null,
@@ -37,6 +47,17 @@ const state = {
   summaryPlotData: null,
   summaryLegendExpanded: false,
   summaryPlotSize: { w: 900, h: 540 },
+  summaryPlotStyle: {
+    use_global_font_size: true,
+    global_font_size_px: 14,
+    font_family: 'Arial, sans-serif',
+    tick_font_size_px: 12,
+    title_font_size_px: 18,
+    axis_title_font_size_px: 14,
+    title_text: 'All Load-Displacement Curves',
+    x_axis_label: null,
+    y_axis_label: null,
+  },
   precomputeQueue: [],
   precomputeQueueRunning: false,
   curveWarmupRunning: false,
@@ -168,6 +189,15 @@ const els = {
   summaryShowAverageShadow: document.getElementById('summaryShowAverageShadow'),
   summaryLineWidth: document.getElementById('summaryLineWidth'),
   summaryLineWidthValue: document.getElementById('summaryLineWidthValue'),
+  summaryFontFamily: document.getElementById('summaryFontFamily'),
+  summaryUseGlobalFontSize: document.getElementById('summaryUseGlobalFontSize'),
+  summaryGlobalFontSize: document.getElementById('summaryGlobalFontSize'),
+  summaryTickFontSize: document.getElementById('summaryTickFontSize'),
+  summaryTitleFontSize: document.getElementById('summaryTitleFontSize'),
+  summaryAxisTitleFontSize: document.getElementById('summaryAxisTitleFontSize'),
+  summaryTitleText: document.getElementById('summaryTitleText'),
+  summaryXAxisLabel: document.getElementById('summaryXAxisLabel'),
+  summaryYAxisLabel: document.getElementById('summaryYAxisLabel'),
   summaryLegendTab: document.getElementById('summaryLegendTab'),
   summaryPlotWrap: document.getElementById('summaryPlotWrap'),
   summaryPlotResizeRight: document.getElementById('summaryPlotResizeRight'),
@@ -181,6 +211,15 @@ const els = {
   metricExplorerZeroY: document.getElementById('metricExplorerZeroY'),
   metricExplorerShowGrid: document.getElementById('metricExplorerShowGrid'),
   metricExplorerShowLabels: document.getElementById('metricExplorerShowLabels'),
+  metricExplorerFontFamily: document.getElementById('metricExplorerFontFamily'),
+  metricExplorerUseGlobalFontSize: document.getElementById('metricExplorerUseGlobalFontSize'),
+  metricExplorerGlobalFontSize: document.getElementById('metricExplorerGlobalFontSize'),
+  metricExplorerTickFontSize: document.getElementById('metricExplorerTickFontSize'),
+  metricExplorerTitleFontSize: document.getElementById('metricExplorerTitleFontSize'),
+  metricExplorerAxisTitleFontSize: document.getElementById('metricExplorerAxisTitleFontSize'),
+  metricExplorerTitleText: document.getElementById('metricExplorerTitleText'),
+  metricExplorerXAxisLabel: document.getElementById('metricExplorerXAxisLabel'),
+  metricExplorerYAxisLabel: document.getElementById('metricExplorerYAxisLabel'),
   metricExplorerDownloadSvgBtn: document.getElementById('metricExplorerDownloadSvgBtn'),
   metricExplorerDownloadCsvBtn: document.getElementById('metricExplorerDownloadCsvBtn'),
   newMetricPlotBtn: document.getElementById('newMetricPlotBtn'),
@@ -1540,6 +1579,7 @@ function applyDomainRepresentative(rep) {
   if (!Number.isFinite(centerIdx) || !Number.isFinite(widthN)) return;
   els.centerSlider.value = String(clamp(centerIdx, Number(els.centerSlider.min), Number(els.centerSlider.max)));
   els.widthSlider.value = String(clamp(widthN, Number(els.widthSlider.min), Number(els.widthSlider.max)));
+  persistSelectedReplicaVizUiState('viz fit window');
   scheduleUpdate();
 }
 
@@ -2854,6 +2894,27 @@ function cloneDomainsLite(domains) {
   return Array.isArray(domains) ? JSON.parse(JSON.stringify(domains)) : [];
 }
 
+function normalizeReplicaVizUi(raw) {
+  const v = (raw && typeof raw === 'object') ? raw : {};
+  const maxModeRaw = String(v.max_mode || '').toLowerCase();
+  const maxMode = ['global', 'window', 'point'].includes(maxModeRaw) ? maxModeRaw : null;
+  const fitCenter = optionalFiniteNumber(v.fit_center_idx);
+  const fitWidth = optionalFiniteNumber(v.fit_width_n);
+  const maxCenter = optionalFiniteNumber(v.max_center_idx);
+  const maxWidth = optionalFiniteNumber(v.max_width_n);
+  const maxPoint = optionalFiniteNumber(v.max_point_idx);
+  const out = {
+    fit_center_idx: Number.isFinite(fitCenter) ? Math.round(fitCenter) : null,
+    fit_width_n: Number.isFinite(fitWidth) ? Math.round(fitWidth) : null,
+    max_mode: maxMode,
+    max_center_idx: Number.isFinite(maxCenter) ? Math.round(maxCenter) : null,
+    max_width_n: Number.isFinite(maxWidth) ? Math.round(maxWidth) : null,
+    max_point_idx: Number.isFinite(maxPoint) ? Math.round(maxPoint) : null,
+  };
+  const hasAny = Object.values(out).some((x) => x !== null);
+  return hasAny ? out : null;
+}
+
 function normalizeReplicaCache(raw) {
   const c = (raw && typeof raw === 'object') ? raw : {};
   const status = String(c.status || 'none');
@@ -2883,6 +2944,7 @@ function normalizeReplicaCache(raw) {
     young_modulus_mpa: Number.isFinite(Number(c.young_modulus_mpa)) ? Number(c.young_modulus_mpa) : null,
     heatmap: c.heatmap && typeof c.heatmap === 'object' ? c.heatmap : null,
     curve_ref: c.curve_ref && typeof c.curve_ref === 'object' ? c.curve_ref : null,
+    viz_ui: normalizeReplicaVizUi(c.viz_ui),
     error: c.error ? String(c.error) : null,
   };
 }
@@ -2924,6 +2986,70 @@ function setReplicaCache(replica, next) {
   replica.cache = normalizeReplicaCache({ ...(replica.cache || {}), ...(next || {}) });
   markProjectChanged('replica cache');
   queueProjectAutosave('replica cache');
+}
+
+function persistSelectedReplicaVizUiState(reason = 'viz ui') {
+  const { sample, replica } = getSelectedReplica();
+  if (!sample || !replica || !state.disp?.length) return;
+  const n = state.disp.length;
+  const fitCenter = clamp(Math.round(Number(els.centerSlider?.value || 0)), 0, Math.max(0, n - 1));
+  const fitWidth = clamp(Math.round(Number(els.widthSlider?.value || 3)), 3, Math.max(3, n));
+  const maxMode = ['global', 'window', 'point'].includes(String(els.maxMode?.value || 'global'))
+    ? String(els.maxMode.value)
+    : 'global';
+  const maxCenter = clamp(Math.round(Number(els.maxCenterSlider?.value || 0)), 0, Math.max(0, n - 1));
+  const maxWidth = clamp(Math.round(Number(els.maxWidthSlider?.value || 1)), 1, Math.max(1, n));
+  const maxPoint = clamp(Math.round(Number(els.maxPointSlider?.value || 0)), 0, Math.max(0, n - 1));
+  const snapshot = normalizeReplicaVizUi({
+    fit_center_idx: fitCenter,
+    fit_width_n: fitWidth,
+    max_mode: maxMode,
+    max_center_idx: maxCenter,
+    max_width_n: maxWidth,
+    max_point_idx: maxPoint,
+  });
+  const prev = normalizeReplicaVizUi(replica?.cache?.viz_ui);
+  if (JSON.stringify(prev) === JSON.stringify(snapshot)) return;
+  replica.cache = normalizeReplicaCache({ ...(replica.cache || {}), viz_ui: snapshot });
+  markProjectChanged(reason);
+  queueProjectAutosave(reason);
+}
+
+function applyReplicaVizUiState(replica) {
+  const ui = normalizeReplicaVizUi(replica?.cache?.viz_ui);
+  if (!ui || !state.disp?.length) return { fitApplied: false, maxApplied: false };
+  const n = state.disp.length;
+  let fitApplied = false;
+  let maxApplied = false;
+  if (Number.isFinite(ui.fit_center_idx)) {
+    els.centerSlider.value = String(clamp(ui.fit_center_idx, Number(els.centerSlider.min), Number(els.centerSlider.max)));
+    fitApplied = true;
+  }
+  if (Number.isFinite(ui.fit_width_n)) {
+    els.widthSlider.value = String(clamp(ui.fit_width_n, Number(els.widthSlider.min), Number(els.widthSlider.max)));
+    fitApplied = true;
+  }
+  if (ui.max_mode) {
+    els.maxMode.value = ui.max_mode;
+    state.maxModePrev = ui.max_mode;
+    maxApplied = true;
+  }
+  if (Number.isFinite(ui.max_center_idx)) {
+    els.maxCenterSlider.value = String(clamp(ui.max_center_idx, Number(els.maxCenterSlider.min), Number(els.maxCenterSlider.max)));
+    maxApplied = true;
+  }
+  if (Number.isFinite(ui.max_width_n)) {
+    els.maxWidthSlider.value = String(clamp(ui.max_width_n, Number(els.maxWidthSlider.min), Number(els.maxWidthSlider.max)));
+    maxApplied = true;
+  }
+  if (Number.isFinite(ui.max_point_idx)) {
+    els.maxPointSlider.value = String(clamp(ui.max_point_idx, Number(els.maxPointSlider.min), Number(els.maxPointSlider.max)));
+    maxApplied = true;
+  }
+  syncWindowFromControls();
+  syncMaxControlsVisibility();
+  syncMaxLabels();
+  return { fitApplied, maxApplied };
 }
 
 async function refreshReplicaAfterGeometryChange(sample, replica) {
@@ -3313,7 +3439,8 @@ async function loadSelectedReplica() {
     syncToeControlsVisibility();
     syncToeLabels();
 
-    if (replica.cache?.status === 'ok' && replica.cache?.representative) {
+    const restoredUi = applyReplicaVizUiState(replica);
+    if (!restoredUi.fitApplied && replica.cache?.status === 'ok' && replica.cache?.representative) {
       const rep = replica.cache.representative;
       const ci = clamp(Number(rep.center_idx), Number(els.centerSlider.min), Number(els.centerSlider.max));
       const wn = clamp(Number(rep.width_n), Number(els.widthSlider.min), Number(els.widthSlider.max));
@@ -3939,6 +4066,121 @@ function metricExplorerDef(metricKey) {
   return METRIC_EXPLORER_METRIC_BY_KEY[metricKey] || METRIC_EXPLORER_METRICS[0];
 }
 
+function clampFontPx(v, fallback, minV = 8, maxV = 40) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return clamp(Math.round(n), minV, maxV);
+}
+
+function sanitizeLegacyTypography(raw = {}) {
+  const src = (raw && typeof raw === 'object') ? { ...raw } : {};
+  delete src.base_font_size_px;
+  delete src.base_font_px;
+  delete src.base_font_size;
+  delete src.font_size_base_px;
+  return src;
+}
+
+function normalizeMetricTypography(raw = {}, metricKey = null) {
+  const src = sanitizeLegacyTypography(raw);
+  const def = metricExplorerDef(metricKey || src.metric_key);
+  const globalOn = src.use_global_font_size !== false;
+  const globalPx = clampFontPx(src.global_font_size_px, 14, 8, 40);
+  const hasTitle = Object.prototype.hasOwnProperty.call(src, 'title_text');
+  const hasX = Object.prototype.hasOwnProperty.call(src, 'x_axis_label');
+  const hasY = Object.prototype.hasOwnProperty.call(src, 'y_axis_label');
+  const titleRaw = hasTitle ? (src.title_text === null ? null : String(src.title_text)) : null;
+  const xRaw = hasX ? (src.x_axis_label === null ? null : String(src.x_axis_label)) : 'Sample';
+  const yRaw = hasY ? (src.y_axis_label === null ? null : String(src.y_axis_label)) : `${def.label} (${def.unit})`;
+  return {
+    use_global_font_size: globalOn,
+    global_font_size_px: globalPx,
+    font_family: String(src.font_family || 'Arial, sans-serif'),
+    tick_font_size_px: globalOn ? globalPx : clampFontPx(src.tick_font_size_px, 12, 8, 32),
+    title_font_size_px: globalOn ? globalPx : clampFontPx(src.title_font_size_px, 17, 10, 40),
+    axis_title_font_size_px: globalOn ? globalPx : clampFontPx(src.axis_title_font_size_px, 14, 10, 36),
+    title_text: titleRaw,
+    x_axis_label: xRaw,
+    y_axis_label: yRaw,
+  };
+}
+
+function normalizeSummaryPlotStyle(raw = {}) {
+  const src = sanitizeLegacyTypography(raw);
+  const globalOn = src.use_global_font_size !== false;
+  const globalPx = clampFontPx(src.global_font_size_px, 14, 8, 40);
+  const hasTitle = Object.prototype.hasOwnProperty.call(src, 'title_text');
+  const hasX = Object.prototype.hasOwnProperty.call(src, 'x_axis_label');
+  const hasY = Object.prototype.hasOwnProperty.call(src, 'y_axis_label');
+  const titleRaw = hasTitle ? (src.title_text === null ? null : String(src.title_text)) : 'All Load-Displacement Curves';
+  const xRaw = hasX ? (src.x_axis_label === null ? null : String(src.x_axis_label)) : null;
+  const yRaw = hasY ? (src.y_axis_label === null ? null : String(src.y_axis_label)) : null;
+  return {
+    use_global_font_size: globalOn,
+    global_font_size_px: globalPx,
+    font_family: String(src.font_family || 'Arial, sans-serif'),
+    tick_font_size_px: globalOn ? globalPx : clampFontPx(src.tick_font_size_px, 12, 8, 32),
+    title_font_size_px: globalOn ? globalPx : clampFontPx(src.title_font_size_px, 18, 10, 40),
+    axis_title_font_size_px: globalOn ? globalPx : clampFontPx(src.axis_title_font_size_px, 14, 10, 36),
+    title_text: titleRaw,
+    x_axis_label: xRaw,
+    y_axis_label: yRaw,
+  };
+}
+
+function currentPlotPixelSize(el, fallbackW, fallbackH) {
+  const rect = el?.getBoundingClientRect?.();
+  return {
+    width: Number.isFinite(rect?.width) && rect.width > 0 ? Math.round(rect.width) : fallbackW,
+    height: Number.isFinite(rect?.height) && rect.height > 0 ? Math.round(rect.height) : fallbackH,
+  };
+}
+
+function syncSettingsTabs(group, pane) {
+  if (!group) return;
+  const buttons = Array.from(document.querySelectorAll(`[data-settings-tabs="${group}"] .settingsTabBtn`));
+  const panes = Array.from(document.querySelectorAll(`.settingsTabPane[data-settings-content="${group}"]`));
+  if (!buttons.length || !panes.length) return;
+  const allowed = new Set(buttons.map((btn) => String(btn.dataset.settingsPane || '')));
+  const targetPane = allowed.has(String(pane || '')) ? String(pane) : String(buttons[0]?.dataset.settingsPane || 'display');
+  buttons.forEach((btn) => {
+    const active = String(btn.dataset.settingsPane || '') === targetPane;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
+  });
+  panes.forEach((el) => {
+    const active = String(el.dataset.settingsPane || '') === targetPane;
+    el.classList.toggle('active', active);
+    el.hidden = !active;
+  });
+}
+
+function initializeSettingsTabs() {
+  document.querySelectorAll('.settingsTabs').forEach((wrap, wrapIdx) => {
+    if (!(wrap instanceof HTMLElement)) return;
+    const group = String(wrap.dataset.settingsTabs || '').trim();
+    if (!group) return;
+    wrap.setAttribute('role', 'tablist');
+    const buttons = Array.from(wrap.querySelectorAll('.settingsTabBtn'));
+    buttons.forEach((btn, btnIdx) => {
+      if (!(btn instanceof HTMLElement)) return;
+      const paneName = String(btn.dataset.settingsPane || '').trim();
+      if (!paneName) return;
+      btn.setAttribute('role', 'tab');
+      if (!btn.id) btn.id = `${group}TabBtn${wrapIdx + 1}_${btnIdx + 1}`;
+      const pane = document.querySelector(`.settingsTabPane[data-settings-content="${group}"][data-settings-pane="${paneName}"]`);
+      if (!(pane instanceof HTMLElement)) return;
+      pane.setAttribute('role', 'tabpanel');
+      if (!pane.id) pane.id = `${group}TabPane${wrapIdx + 1}_${btnIdx + 1}`;
+      btn.setAttribute('aria-controls', pane.id);
+      pane.setAttribute('aria-labelledby', btn.id);
+    });
+    const activeBtn = buttons.find((btn) => btn.classList.contains('active')) || buttons[0];
+    syncSettingsTabs(group, activeBtn?.dataset.settingsPane || 'display');
+  });
+}
+
 function normalizeMetricExplorerPin(raw) {
   const p = (raw && typeof raw === 'object') ? raw : {};
   const metric_key = METRIC_EXPLORER_METRIC_BY_KEY[p.metric_key] ? p.metric_key : METRIC_EXPLORER_METRICS[0].key;
@@ -3948,6 +4190,7 @@ function normalizeMetricExplorerPin(raw) {
     y_zero: p?.settings?.y_zero !== false,
     show_grid: p?.settings?.show_grid !== false,
     show_labels: Boolean(p?.settings?.show_labels),
+    ...normalizeMetricTypography(p?.settings || {}, metric_key),
   };
   return {
     id: String(p.id || uid('mpin')),
@@ -3975,6 +4218,7 @@ function normalizeMetricExplorerState(raw) {
       y_zero: cur.y_zero !== false,
       show_grid: cur.show_grid !== false,
       show_labels: Boolean(cur.show_labels),
+      ...normalizeMetricTypography(cur || {}, metric_key),
       plot_width_px: Number.isFinite(Number(cur.plot_width_px)) ? Number(cur.plot_width_px) : 760,
       plot_height_px: Number.isFinite(Number(cur.plot_height_px)) ? Number(cur.plot_height_px) : 570,
     },
@@ -4399,6 +4643,7 @@ function ensureMetricExplorerControls() {
   const showLabels = Boolean(cur.show_labels);
   const plotWidth = Number.isFinite(Number(cur.plot_width_px)) ? Number(cur.plot_width_px) : 760;
   const plotHeight = Number.isFinite(Number(cur.plot_height_px)) ? Number(cur.plot_height_px) : 570;
+  const typo = normalizeMetricTypography(cur, key);
   state.metricExplorer.current = {
     metric_key: key,
     style,
@@ -4406,6 +4651,7 @@ function ensureMetricExplorerControls() {
     y_zero: yZero,
     show_grid: showGrid,
     show_labels: showLabels,
+    ...typo,
     plot_width_px: plotWidth,
     plot_height_px: plotHeight,
   };
@@ -4415,6 +4661,29 @@ function ensureMetricExplorerControls() {
   if (els.metricExplorerZeroY) els.metricExplorerZeroY.checked = yZero;
   if (els.metricExplorerShowGrid) els.metricExplorerShowGrid.checked = showGrid;
   if (els.metricExplorerShowLabels) els.metricExplorerShowLabels.checked = showLabels;
+  if (els.metricExplorerFontFamily) els.metricExplorerFontFamily.value = state.metricExplorer.current.font_family;
+  if (els.metricExplorerUseGlobalFontSize) els.metricExplorerUseGlobalFontSize.checked = Boolean(state.metricExplorer.current.use_global_font_size);
+  if (els.metricExplorerGlobalFontSize) els.metricExplorerGlobalFontSize.value = String(state.metricExplorer.current.global_font_size_px);
+  if (els.metricExplorerTickFontSize) els.metricExplorerTickFontSize.value = String(state.metricExplorer.current.tick_font_size_px);
+  if (els.metricExplorerTitleFontSize) els.metricExplorerTitleFontSize.value = String(state.metricExplorer.current.title_font_size_px);
+  if (els.metricExplorerAxisTitleFontSize) els.metricExplorerAxisTitleFontSize.value = String(state.metricExplorer.current.axis_title_font_size_px);
+  if (els.metricExplorerTitleText) els.metricExplorerTitleText.value = state.metricExplorer.current.title_text ?? '';
+  if (els.metricExplorerXAxisLabel) els.metricExplorerXAxisLabel.value = state.metricExplorer.current.x_axis_label ?? '';
+  if (els.metricExplorerYAxisLabel) els.metricExplorerYAxisLabel.value = state.metricExplorer.current.y_axis_label ?? '';
+  syncMetricGlobalFontUi();
+}
+
+function syncMetricGlobalFontUi() {
+  const on = Boolean(els.metricExplorerUseGlobalFontSize?.checked);
+  const globalCombo = els.metricExplorerGlobalFontSize?.closest('.fontSizeCombo');
+  if (globalCombo instanceof HTMLElement) globalCombo.style.display = on ? '' : 'none';
+  [els.metricExplorerTickFontSize, els.metricExplorerTitleFontSize, els.metricExplorerAxisTitleFontSize].forEach((el) => {
+    if (!(el instanceof HTMLInputElement)) return;
+    const label = el.closest('label');
+    if (label instanceof HTMLElement) label.style.display = on ? 'none' : '';
+    el.disabled = on;
+    el.readOnly = on;
+  });
 }
 
 function clampMetricExplorerPlotWidth(px) {
@@ -4441,6 +4710,7 @@ function metricExplorerCurrentSettings() {
     y_zero: cur.y_zero !== false,
     show_grid: cur.show_grid !== false,
     show_labels: Boolean(cur.show_labels),
+    ...normalizeMetricTypography(cur, cur.metric_key),
   };
 }
 
@@ -4532,15 +4802,36 @@ function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) 
       }];
 
   const chartLabel = style === 'bar' ? 'Bar + SEM' : 'Dot + SEM';
+  const typo = normalizeMetricTypography(settings, metricKey);
+  const resolvePlotText = (value, fallback) => {
+    if (value === null || value === undefined) return fallback;
+    const s = String(value);
+    return s.trim() ? s : '\u00A0';
+  };
+  const resolvedTitle = title === null || title === undefined
+    ? resolvePlotText(typo.title_text, `${def.label} (${def.unit})`)
+    : title;
+  const resolvedXLabel = resolvePlotText(typo.x_axis_label, 'Sample');
+  const resolvedYLabel = resolvePlotText(typo.y_axis_label, `${def.label} (${def.unit})`);
   const layout = {
-    title: { text: title || `${def.label} (${def.unit})`, font: { size: 17 } },
+    font: { family: typo.font_family },
+    title: { text: resolvedTitle, font: { family: typo.font_family, size: typo.title_font_size_px } },
     paper_bgcolor: '#ffffff',
     plot_bgcolor: '#ffffff',
     hovermode: 'closest',
     margin: { l: 74, r: 18, t: 58, b: 70 },
-    xaxis: { title: 'Sample', showline: true, mirror: true, ticks: 'outside', showgrid: false, zeroline: false },
+    xaxis: {
+      title: { text: resolvedXLabel, font: { family: typo.font_family, size: typo.axis_title_font_size_px } },
+      tickfont: { family: typo.font_family, size: typo.tick_font_size_px },
+      showline: true,
+      mirror: true,
+      ticks: 'outside',
+      showgrid: false,
+      zeroline: false,
+    },
     yaxis: {
-      title: `${def.label} (${def.unit})`,
+      title: { text: resolvedYLabel, font: { family: typo.font_family, size: typo.axis_title_font_size_px } },
+      tickfont: { family: typo.font_family, size: typo.tick_font_size_px },
       showline: true,
       mirror: true,
       ticks: 'outside',
@@ -4558,7 +4849,7 @@ function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) 
       yanchor: 'bottom',
       showarrow: false,
       text: chartLabel,
-      font: { size: 11, color: '#6b7280' },
+      font: { family: typo.font_family, size: Math.max(10, typo.tick_font_size_px - 1), color: '#6b7280' },
     }],
   };
   return { hasData: true, data, layout };
@@ -4592,11 +4883,12 @@ function drawMetricExplorerPlot() {
 function downloadMetricExplorerSvg() {
   if (!window.Plotly || !els.metricExplorerPlot) return;
   drawMetricExplorerPlot();
+  const size = currentPlotPixelSize(els.metricExplorerPlot, state.metricExplorer.current?.plot_width_px || 760, state.metricExplorer.current?.plot_height_px || 570);
   window.Plotly.downloadImage(els.metricExplorerPlot, {
     format: 'svg',
     filename: 'metric_explorer',
-    width: 1200,
-    height: 900,
+    width: size.width,
+    height: size.height,
     scale: 1,
   });
 }
@@ -4728,6 +5020,7 @@ function loadPinnedMetricToExplorer(pinId) {
   const pin = (state.metricExplorer.pinned || []).find((p) => p.id === pinId);
   if (!pin) return;
   state.metricExplorer.active_pin_id = pin.id;
+  const typo = normalizeMetricTypography(pin.settings || {}, pin.metric_key);
   state.metricExplorer.current = {
     metric_key: pin.metric_key,
     style: pin.style,
@@ -4735,6 +5028,7 @@ function loadPinnedMetricToExplorer(pinId) {
     y_zero: pin.settings?.y_zero !== false,
     show_grid: pin.settings?.show_grid !== false,
     show_labels: Boolean(pin.settings?.show_labels),
+    ...typo,
     plot_width_px: state.metricExplorer.current?.plot_width_px || 760,
     plot_height_px: state.metricExplorer.current?.plot_height_px || 570,
   };
@@ -5054,6 +5348,38 @@ function buildSummarySeriesCurves(rawSeries, includeToe, wantStressStrain) {
   return { curves, skippedForGeometry };
 }
 
+
+function summaryPlotTypography() {
+  return normalizeSummaryPlotStyle(state.summaryPlotStyle || {});
+}
+
+function applySummaryTypographyControls() {
+  const st = summaryPlotTypography();
+  state.summaryPlotStyle = { ...st };
+  if (els.summaryFontFamily) els.summaryFontFamily.value = st.font_family;
+  if (els.summaryUseGlobalFontSize) els.summaryUseGlobalFontSize.checked = Boolean(st.use_global_font_size);
+  if (els.summaryGlobalFontSize) els.summaryGlobalFontSize.value = String(st.global_font_size_px);
+  if (els.summaryTickFontSize) els.summaryTickFontSize.value = String(st.tick_font_size_px);
+  if (els.summaryTitleFontSize) els.summaryTitleFontSize.value = String(st.title_font_size_px);
+  if (els.summaryAxisTitleFontSize) els.summaryAxisTitleFontSize.value = String(st.axis_title_font_size_px);
+  if (els.summaryTitleText) els.summaryTitleText.value = st.title_text ?? '';
+  if (els.summaryXAxisLabel) els.summaryXAxisLabel.value = st.x_axis_label ?? '';
+  if (els.summaryYAxisLabel) els.summaryYAxisLabel.value = st.y_axis_label ?? '';
+  syncSummaryGlobalFontUi();
+}
+
+function syncSummaryGlobalFontUi() {
+  const on = Boolean(els.summaryUseGlobalFontSize?.checked);
+  const globalCombo = els.summaryGlobalFontSize?.closest('.fontSizeCombo');
+  if (globalCombo instanceof HTMLElement) globalCombo.style.display = on ? '' : 'none';
+  [els.summaryTickFontSize, els.summaryTitleFontSize, els.summaryAxisTitleFontSize].forEach((el) => {
+    if (!(el instanceof HTMLInputElement)) return;
+    const label = el.closest('label');
+    if (label instanceof HTMLElement) label.style.display = on ? 'none' : '';
+    el.disabled = on;
+    el.readOnly = on;
+  });
+}
 function buildSampleAverageTraces(curves, showShadow, lineWidth) {
   const bySample = new Map();
   for (const c of curves) {
@@ -5180,19 +5506,28 @@ function drawSummaryPlot() {
     }
     return;
   }
-  const xAxisLabel = wantStressStrain
+  const defaultXAxisLabel = wantStressStrain
     ? (includeToe ? 'Strain (%)' : 'Strain from toe end (%)')
     : (includeToe ? 'Displacement (mm)' : 'Displacement from toe end (mm)');
-  const yAxisLabel = wantStressStrain ? 'Stress (MPa)' : 'Load / Force (N)';
+  const defaultYAxisLabel = wantStressStrain ? 'Stress (MPa)' : 'Load / Force (N)';
+  const typo = summaryPlotTypography();
+  const resolvePlotText = (value, fallback) => {
+    if (value === null || value === undefined) return fallback;
+    const s = String(value);
+    return s.trim() ? s : '\u00A0';
+  };
+  const xAxisLabel = resolvePlotText(typo.x_axis_label, defaultXAxisLabel);
+  const yAxisLabel = resolvePlotText(typo.y_axis_label, defaultYAxisLabel);
 
   const layout = {
-    title: { text: 'All Load-Displacement Curves', font: { size: 18 } },
+    font: { family: typo.font_family },
+    title: { text: resolvePlotText(typo.title_text, 'All Load-Displacement Curves'), font: { family: typo.font_family, size: typo.title_font_size_px } },
     paper_bgcolor: '#ffffff',
     plot_bgcolor: '#ffffff',
     hovermode: 'closest',
     margin: { l: 80, r: state.summaryLegendExpanded ? 250 : 28, t: 58, b: 68 },
-    xaxis: { title: xAxisLabel, showline: true, mirror: true, ticks: 'outside', showgrid: true, zeroline: false },
-    yaxis: { title: yAxisLabel, showline: true, mirror: true, ticks: 'outside', showgrid: true, zeroline: false },
+    xaxis: { title: { text: xAxisLabel, font: { family: typo.font_family, size: typo.axis_title_font_size_px } }, tickfont: { family: typo.font_family, size: typo.tick_font_size_px }, showline: true, mirror: true, ticks: 'outside', showgrid: true, zeroline: false },
+    yaxis: { title: { text: yAxisLabel, font: { family: typo.font_family, size: typo.axis_title_font_size_px } }, tickfont: { family: typo.font_family, size: typo.tick_font_size_px }, showline: true, mirror: true, ticks: 'outside', showgrid: true, zeroline: false },
     showlegend: state.summaryLegendExpanded,
     legend: {
       x: 1.02, y: 1, xanchor: 'left', yanchor: 'top',
@@ -5211,14 +5546,20 @@ function drawSummaryPlot() {
           text: wantStressStrain
             ? `Excluded ${skippedForGeometry} curve(s) without area/thickness.`
             : '',
-          font: { size: 11, color: '#6b7280' },
+          font: { family: typo.font_family, size: Math.max(10, typo.tick_font_size_px - 1), color: '#6b7280' },
         }]
       : [],
   };
   const config = {
     responsive: true,
     displaylogo: false,
-    toImageButtonOptions: { format: 'svg', filename: 'summary_load_displacement', scale: 1 },
+    toImageButtonOptions: {
+      format: 'svg',
+      filename: 'summary_load_displacement',
+      width: currentPlotPixelSize(els.summaryPlot, state.summaryPlotSize?.w || 900, state.summaryPlotSize?.h || 540).width,
+      height: currentPlotPixelSize(els.summaryPlot, state.summaryPlotSize?.w || 900, state.summaryPlotSize?.h || 540).height,
+      scale: 1,
+    },
   };
   window.Plotly.react(els.summaryPlot, traces, layout, config);
   state.summaryPlotData = {
@@ -5231,11 +5572,12 @@ function drawSummaryPlot() {
 function downloadSummaryPlotSvg() {
   if (!els.summaryPlot || !window.Plotly) return;
   drawSummaryPlot();
+  const size = currentPlotPixelSize(els.summaryPlot, state.summaryPlotSize?.w || 900, state.summaryPlotSize?.h || 540);
   window.Plotly.downloadImage(els.summaryPlot, {
     format: 'svg',
     filename: 'summary_load_displacement',
-    width: 1400,
-    height: 900,
+    width: size.width,
+    height: size.height,
     scale: 1,
   });
 }
@@ -6329,6 +6671,89 @@ function setupEvents() {
   els.summaryShowFitDetails?.addEventListener('change', () => {
     if (document.getElementById('summaryTab')?.classList.contains('active')) renderSummaryFromCache();
   });
+
+  document.querySelectorAll('.settingsTabs').forEach((wrap) => {
+    const group = String(wrap.dataset.settingsTabs || '').trim();
+    if (!group) return;
+    wrap.addEventListener('click', (evt) => {
+      const btn = evt.target.closest('.settingsTabBtn');
+      if (!(btn instanceof HTMLElement)) return;
+      const pane = String(btn.dataset.settingsPane || 'display');
+      syncSettingsTabs(group, pane);
+    });
+    wrap.addEventListener('keydown', (evt) => {
+      const target = evt.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains('settingsTabBtn')) return;
+      const buttons = Array.from(wrap.querySelectorAll('.settingsTabBtn'));
+      if (!buttons.length) return;
+      const idx = buttons.indexOf(target);
+      if (idx < 0) return;
+      let nextIdx = idx;
+      if (evt.key === 'ArrowRight' || evt.key === 'ArrowDown') nextIdx = (idx + 1) % buttons.length;
+      else if (evt.key === 'ArrowLeft' || evt.key === 'ArrowUp') nextIdx = (idx - 1 + buttons.length) % buttons.length;
+      else if (evt.key === 'Home') nextIdx = 0;
+      else if (evt.key === 'End') nextIdx = buttons.length - 1;
+      else return;
+      evt.preventDefault();
+      const btn = buttons[nextIdx];
+      const pane = String(btn.dataset.settingsPane || 'display');
+      syncSettingsTabs(group, pane);
+      btn.focus();
+    });
+  });
+  const onMetricTypographyChanged = () => {
+    const useGlobal = Boolean(els.metricExplorerUseGlobalFontSize?.checked);
+    const globalPx = clampFontPx(els.metricExplorerGlobalFontSize?.value, 14, 8, 40);
+    state.metricExplorer.current.font_family = String(els.metricExplorerFontFamily?.value || 'Arial, sans-serif');
+    state.metricExplorer.current.use_global_font_size = useGlobal;
+    state.metricExplorer.current.global_font_size_px = globalPx;
+    state.metricExplorer.current.tick_font_size_px = useGlobal ? globalPx : clampFontPx(els.metricExplorerTickFontSize?.value, 12, 8, 32);
+    state.metricExplorer.current.title_font_size_px = useGlobal ? globalPx : clampFontPx(els.metricExplorerTitleFontSize?.value, 17, 10, 40);
+    state.metricExplorer.current.axis_title_font_size_px = useGlobal ? globalPx : clampFontPx(els.metricExplorerAxisTitleFontSize?.value, 14, 10, 36);
+    state.metricExplorer.current.title_text = String(els.metricExplorerTitleText?.value || '');
+    state.metricExplorer.current.x_axis_label = String(els.metricExplorerXAxisLabel?.value ?? 'Sample');
+    state.metricExplorer.current.y_axis_label = String(els.metricExplorerYAxisLabel?.value ?? '');
+    syncMetricGlobalFontUi();
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer');
+  };
+  [
+    els.metricExplorerFontFamily,
+    els.metricExplorerUseGlobalFontSize,
+    els.metricExplorerGlobalFontSize,
+    els.metricExplorerTickFontSize,
+    els.metricExplorerTitleFontSize,
+    els.metricExplorerAxisTitleFontSize,
+    els.metricExplorerTitleText,
+    els.metricExplorerXAxisLabel,
+    els.metricExplorerYAxisLabel,
+  ].forEach((el) => el?.addEventListener('input', onMetricTypographyChanged));
+  const onSummaryTypographyChanged = () => {
+    state.summaryPlotStyle = normalizeSummaryPlotStyle({
+      font_family: String(els.summaryFontFamily?.value || 'Arial, sans-serif'),
+      use_global_font_size: Boolean(els.summaryUseGlobalFontSize?.checked),
+      global_font_size_px: els.summaryGlobalFontSize?.value,
+      tick_font_size_px: els.summaryTickFontSize?.value,
+      title_font_size_px: els.summaryTitleFontSize?.value,
+      axis_title_font_size_px: els.summaryAxisTitleFontSize?.value,
+      title_text: String(els.summaryTitleText?.value ?? ''),
+      x_axis_label: String(els.summaryXAxisLabel?.value ?? ''),
+      y_axis_label: String(els.summaryYAxisLabel?.value ?? ''),
+    });
+    syncSummaryGlobalFontUi();
+    if (document.getElementById('summaryTab')?.classList.contains('active')) drawSummaryPlot();
+  };
+  [
+    els.summaryFontFamily,
+    els.summaryUseGlobalFontSize,
+    els.summaryGlobalFontSize,
+    els.summaryTickFontSize,
+    els.summaryTitleFontSize,
+    els.summaryAxisTitleFontSize,
+    els.summaryTitleText,
+    els.summaryXAxisLabel,
+    els.summaryYAxisLabel,
+  ].forEach((el) => el?.addEventListener('input', onSummaryTypographyChanged));
   els.metricExplorerMetric?.addEventListener('change', () => {
     const key = String(els.metricExplorerMetric.value || '');
     if (!METRIC_EXPLORER_METRIC_BY_KEY[key]) return;
@@ -6625,8 +7050,14 @@ function setupEvents() {
     els.toggleDomainsBtn.textContent = collapsed ? 'Show' : 'Hide';
   });
 
-  els.centerSlider.addEventListener('input', scheduleUpdate);
-  els.widthSlider.addEventListener('input', scheduleUpdate);
+  els.centerSlider.addEventListener('input', () => {
+    persistSelectedReplicaVizUiState('viz fit window');
+    scheduleUpdate();
+  });
+  els.widthSlider.addEventListener('input', () => {
+    persistSelectedReplicaVizUiState('viz fit window');
+    scheduleUpdate();
+  });
   els.plotUseStressStrain?.addEventListener('change', () => {
     drawPlot();
   });
@@ -6642,18 +7073,22 @@ function setupEvents() {
     state.maxModePrev = next;
     syncMaxControlsVisibility();
     syncMaxLabels();
+    persistSelectedReplicaVizUiState('viz max controls');
     scheduleUpdate();
   });
   els.maxCenterSlider.addEventListener('input', () => {
     syncMaxLabels();
+    persistSelectedReplicaVizUiState('viz max controls');
     scheduleUpdate();
   });
   els.maxWidthSlider.addEventListener('input', () => {
     syncMaxLabels();
+    persistSelectedReplicaVizUiState('viz max controls');
     scheduleUpdate();
   });
   els.maxPointSlider.addEventListener('input', () => {
     syncMaxLabels();
+    persistSelectedReplicaVizUiState('viz max controls');
     scheduleUpdate();
   });
   els.showD2.addEventListener('change', () => {
@@ -6761,6 +7196,7 @@ function setupEvents() {
       state.suppressPlotClickOnce = Boolean(state.drag.moved);
       state.drag = null;
       els.plotCanvas.style.cursor = 'default';
+      persistSelectedReplicaVizUiState('viz drag update');
       scheduleUpdate();
     }
   });
@@ -6805,6 +7241,83 @@ function setupEvents() {
   setupSummaryPlotResizeHandles();
 }
 
+const COMMON_FONT_SIZES_PX = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40];
+
+function closeAllFontSizeComboMenus(exceptCombo = null) {
+  document.querySelectorAll('.fontSizeCombo').forEach((combo) => {
+    if (!(combo instanceof HTMLElement)) return;
+    if (exceptCombo && combo === exceptCombo) return;
+    combo.classList.remove('open');
+    const menu = combo.querySelector('.fontSizeComboMenu');
+    if (menu instanceof HTMLElement) menu.hidden = true;
+  });
+}
+
+function openFontSizeCombo(combo) {
+  if (!(combo instanceof HTMLElement)) return;
+  closeAllFontSizeComboMenus(combo);
+  combo.classList.add('open');
+  const menu = combo.querySelector('.fontSizeComboMenu');
+  if (menu instanceof HTMLElement) menu.hidden = false;
+}
+
+function setupFontSizeCombos() {
+  document.querySelectorAll('.fontSizeCombo').forEach((combo) => {
+    if (!(combo instanceof HTMLElement)) return;
+    if (combo.dataset.comboReady === '1') return;
+    combo.dataset.comboReady = '1';
+    const input = combo.querySelector('input');
+    const toggle = combo.querySelector('.fontSizeComboToggle');
+    const menu = combo.querySelector('.fontSizeComboMenu');
+    if (!(input instanceof HTMLInputElement) || !(toggle instanceof HTMLButtonElement) || !(menu instanceof HTMLElement)) return;
+
+    menu.innerHTML = COMMON_FONT_SIZES_PX
+      .map((size) => `<button type="button" class="fontSizeComboOption" data-size="${size}">${size}</button>`)
+      .join('');
+
+    const open = () => openFontSizeCombo(combo);
+    const close = () => {
+      combo.classList.remove('open');
+      menu.hidden = true;
+    };
+
+    input.addEventListener('click', open);
+    input.addEventListener('focus', open);
+    input.addEventListener('keydown', (evt) => {
+      if (evt.key === 'ArrowDown' || (evt.key === 'Down' && !evt.altKey)) {
+        evt.preventDefault();
+        open();
+      } else if (evt.key === 'Escape') {
+        close();
+      }
+    });
+    toggle.addEventListener('mousedown', (evt) => evt.preventDefault());
+    toggle.addEventListener('click', () => {
+      if (combo.classList.contains('open')) close();
+      else open();
+      input.focus();
+    });
+    menu.addEventListener('mousedown', (evt) => evt.preventDefault());
+    menu.addEventListener('click', (evt) => {
+      const btn = evt.target.closest('.fontSizeComboOption');
+      if (!(btn instanceof HTMLElement)) return;
+      const value = String(btn.dataset.size || '').trim();
+      if (!value) return;
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      close();
+      input.focus();
+    });
+  });
+
+  document.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof Node)) return;
+    const inside = target instanceof Element ? target.closest('.fontSizeCombo') : null;
+    if (!inside) closeAllFontSizeComboMenus(null);
+  });
+}
+
 function init() {
   const appShell = document.querySelector('.appShell');
   if (appShell instanceof HTMLElement && els.appSidebarToggle) {
@@ -6834,6 +7347,8 @@ function init() {
   ensureMetricExplorerControls();
   applyMetricExplorerPlotSize();
   applySummaryPlotSize();
+  applySummaryTypographyControls();
+  initializeSettingsTabs();
   if (els.summaryLineWidth && els.summaryLineWidthValue) {
     const v = clamp(Number(els.summaryLineWidth.value || 1.8), 0.8, 6.0);
     els.summaryLineWidth.value = String(v);
@@ -6846,6 +7361,7 @@ function init() {
   setSummaryPlotMessage('No precomputed curves available yet.');
   setPrecomputeInfo('Ready.');
   setupEvents();
+  setupFontSizeCombos();
   syncGlobalGeometryInputsUi();
 }
 
