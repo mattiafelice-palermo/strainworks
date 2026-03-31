@@ -27,6 +27,7 @@ const state = {
       y_zero: true,
       show_grid: true,
       show_labels: false,
+      show_error_bars: true,
       use_global_font_size: true,
       global_font_size_px: 14,
       font_family: 'Arial, sans-serif',
@@ -36,6 +37,11 @@ const state = {
       title_text: null,
       x_axis_label: 'Sample',
       y_axis_label: null,
+      group_enabled: false,
+      group_show_legend: true,
+      group_bar_gap: 0.12,
+      group_legends: [],
+      group_assignment: {},
       plot_width_px: 760,
       plot_height_px: 570,
     },
@@ -60,6 +66,7 @@ const state = {
   },
   precomputeQueue: [],
   precomputeQueueRunning: false,
+  summaryAutoPrecomputeQueued: false,
   curveWarmupRunning: false,
   projectSaveHandle: null,
   projectSaveName: '',
@@ -82,6 +89,30 @@ const state = {
   projectSchemaVersion: 1,
   projectBuildVersion: '20260302-39',
   heatmapDrawRetryTimer: null,
+  groupEditor: {
+    selected_group_id: null,
+    search: '',
+    selected_available_ids: [],
+    selected_in_group_ids: [],
+    anchor_available_id: null,
+    anchor_in_group_id: null,
+    editing_group_id: null,
+    editing_group_name: '',
+    pending_click_timer: null,
+    pending_click_key: '',
+    pending_click_at: 0,
+  },
+  groupLegendEditor: {
+    selected_label_id: null,
+    search: '',
+  },
+  vizGroupFilter: {
+    open: false,
+    query: '',
+    selected_group_ids: [],
+    known_group_ids: [],
+    initialized: false,
+  },
   sampleColorPicker: {
     open: false,
     sample_id: null,
@@ -137,9 +168,18 @@ const els = {
   includeHeatmapInExport: document.getElementById('includeHeatmapInExport'),
   precomputeInfo: document.getElementById('precomputeInfo'),
   samplesList: document.getElementById('samplesList'),
+  newGroupName: document.getElementById('newGroupName'),
+  addGroupBtn: document.getElementById('addGroupBtn'),
+  groupsList: document.getElementById('groupsList'),
 
   vizSampleSelect: document.getElementById('vizSampleSelect'),
   vizReplicaSelect: document.getElementById('vizReplicaSelect'),
+  vizGroupFilter: document.getElementById('vizGroupFilter'),
+  vizGroupFilterBtn: document.getElementById('vizGroupFilterBtn'),
+  vizGroupFilterDropdown: document.getElementById('vizGroupFilterDropdown'),
+  vizGroupFilterSearch: document.getElementById('vizGroupFilterSearch'),
+  vizGroupFilterToggleAllBtn: document.getElementById('vizGroupFilterToggleAllBtn'),
+  vizGroupFilterOptions: document.getElementById('vizGroupFilterOptions'),
   vizInfo: document.getElementById('vizInfo'),
   domainThreshold: document.getElementById('domainThreshold'),
   domainThresholdValue: document.getElementById('domainThresholdValue'),
@@ -211,6 +251,7 @@ const els = {
   metricExplorerZeroY: document.getElementById('metricExplorerZeroY'),
   metricExplorerShowGrid: document.getElementById('metricExplorerShowGrid'),
   metricExplorerShowLabels: document.getElementById('metricExplorerShowLabels'),
+  metricExplorerShowErrorBars: document.getElementById('metricExplorerShowErrorBars'),
   metricExplorerFontFamily: document.getElementById('metricExplorerFontFamily'),
   metricExplorerUseGlobalFontSize: document.getElementById('metricExplorerUseGlobalFontSize'),
   metricExplorerGlobalFontSize: document.getElementById('metricExplorerGlobalFontSize'),
@@ -220,6 +261,20 @@ const els = {
   metricExplorerTitleText: document.getElementById('metricExplorerTitleText'),
   metricExplorerXAxisLabel: document.getElementById('metricExplorerXAxisLabel'),
   metricExplorerYAxisLabel: document.getElementById('metricExplorerYAxisLabel'),
+  metricExplorerXAxisLabelCombo: document.getElementById('metricExplorerXAxisLabelCombo'),
+  metricExplorerYAxisLabelCombo: document.getElementById('metricExplorerYAxisLabelCombo'),
+  metricExplorerGroupEnabled: document.getElementById('metricExplorerGroupEnabled'),
+  metricExplorerGroupShowLegend: document.getElementById('metricExplorerGroupShowLegend'),
+  metricExplorerGroupBarGap: document.getElementById('metricExplorerGroupBarGap'),
+  metricExplorerGroupBarGapValue: document.getElementById('metricExplorerGroupBarGapValue'),
+  metricExplorerGroupSeriesMap: document.getElementById('metricExplorerGroupSeriesMap'),
+  groupLegendEditorModal: document.getElementById('groupLegendEditorModal'),
+  groupLegendEditorDialog: document.getElementById('groupLegendEditorDialog'),
+  groupLegendEditorCloseBtn: document.getElementById('groupLegendEditorCloseBtn'),
+  groupLegendNewLabel: document.getElementById('groupLegendNewLabel'),
+  groupLegendAddBtn: document.getElementById('groupLegendAddBtn'),
+  groupLegendSeriesList: document.getElementById('groupLegendSeriesList'),
+  groupLegendAssignmentList: document.getElementById('groupLegendAssignmentList'),
   metricExplorerDownloadSvgBtn: document.getElementById('metricExplorerDownloadSvgBtn'),
   metricExplorerDownloadCsvBtn: document.getElementById('metricExplorerDownloadCsvBtn'),
   newMetricPlotBtn: document.getElementById('newMetricPlotBtn'),
@@ -653,6 +708,135 @@ function escapeRegex(s) {
   return String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function makeWildcardMatcher(rawQuery) {
+  const q = String(rawQuery || '').trim();
+  if (!q) return () => true;
+  if (!/[*?]/.test(q)) {
+    const needle = q.toLowerCase();
+    return (value) => String(value || '').toLowerCase().includes(needle);
+  }
+  const pattern = q
+    .split('')
+    .map((ch) => {
+      if (ch === '*') return '.*';
+      if (ch === '?') return '.';
+      return escapeRegex(ch);
+    })
+    .join('');
+  const re = new RegExp(`^${pattern}$`, 'i');
+  return (value) => re.test(String(value || ''));
+}
+
+function applyListSelectionModifiers({ orderedIds, currentIds, anchorId, targetId, shiftKey, toggleKey }) {
+  const ids = Array.isArray(orderedIds) ? orderedIds.map((v) => String(v || '')) : [];
+  const sid = String(targetId || '');
+  if (!sid || !ids.includes(sid)) {
+    return { ids: Array.isArray(currentIds) ? currentIds : [], anchorId: anchorId || null };
+  }
+  const current = new Set(Array.isArray(currentIds) ? currentIds : []);
+  let nextAnchor = anchorId || null;
+
+  if (shiftKey && nextAnchor && ids.includes(nextAnchor)) {
+    const a = ids.indexOf(nextAnchor);
+    const b = ids.indexOf(sid);
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    const range = ids.slice(lo, hi + 1);
+    if (toggleKey) {
+      for (const id of range) current.add(id);
+    } else {
+      current.clear();
+      for (const id of range) current.add(id);
+    }
+  } else if (toggleKey) {
+    if (current.has(sid)) current.delete(sid);
+    else current.add(sid);
+    nextAnchor = sid;
+  } else {
+    current.clear();
+    current.add(sid);
+    nextAnchor = sid;
+  }
+
+  return {
+    ids: ids.filter((id) => current.has(id)),
+    anchorId: nextAnchor,
+  };
+}
+
+function clearPendingGroupRowClick() {
+  const ge = state.groupEditor || {};
+  if (ge.pending_click_timer) clearTimeout(ge.pending_click_timer);
+  ge.pending_click_timer = null;
+  ge.pending_click_key = '';
+  ge.pending_click_at = 0;
+}
+
+function moveSampleBetweenGroupLists(gid, list, sid) {
+  const group = (state.project?.groups || []).find((g) => g.id === gid);
+  if (!group) return false;
+  if (list === 'available') {
+    if (!group.sample_ids.includes(sid)) group.sample_ids.push(sid);
+    state.groupEditor.selected_available_ids = (state.groupEditor.selected_available_ids || []).filter((id) => id !== sid);
+    state.groupEditor.anchor_available_id = null;
+  } else if (list === 'in_group') {
+    group.sample_ids = (group.sample_ids || []).filter((id) => id !== sid);
+    state.groupEditor.selected_in_group_ids = (state.groupEditor.selected_in_group_ids || []).filter((id) => id !== sid);
+    state.groupEditor.anchor_in_group_id = null;
+  } else {
+    return false;
+  }
+  markProjectChanged('group membership');
+  renderGroupsPanel();
+  refreshVizSelectors();
+  renderProjectInfo();
+  queueProjectAutosave('group membership');
+  return true;
+}
+
+function applyGroupRowSelection(list, sid, shiftKey, toggleKey) {
+  const orderedIds = Array.from(els.groupsList.querySelectorAll(`.groupSampleRowSelectable[data-list="${list}"]`))
+    .map((el) => String(el.getAttribute('data-sid') || ''))
+    .filter((id) => id);
+  const isAvailable = list === 'available';
+  const currentIds = isAvailable ? state.groupEditor.selected_available_ids : state.groupEditor.selected_in_group_ids;
+  const anchorId = isAvailable ? state.groupEditor.anchor_available_id : state.groupEditor.anchor_in_group_id;
+  const next = applyListSelectionModifiers({
+    orderedIds,
+    currentIds,
+    anchorId,
+    targetId: sid,
+    shiftKey: Boolean(shiftKey),
+    toggleKey: Boolean(toggleKey),
+  });
+  if (isAvailable) {
+    state.groupEditor.selected_available_ids = next.ids;
+    state.groupEditor.anchor_available_id = next.anchorId;
+  } else {
+    state.groupEditor.selected_in_group_ids = next.ids;
+    state.groupEditor.anchor_in_group_id = next.anchorId;
+  }
+  syncGroupRowSelectionUi();
+}
+
+function syncGroupRowSelectionUi() {
+  if (!els.groupsList) return;
+  const selAvail = new Set(state.groupEditor.selected_available_ids || []);
+  const selIn = new Set(state.groupEditor.selected_in_group_ids || []);
+  for (const row of Array.from(els.groupsList.querySelectorAll('.groupSampleRowSelectable'))) {
+    const sid = String(row.getAttribute('data-sid') || '');
+    const list = String(row.getAttribute('data-list') || '');
+    const on = list === 'available' ? selAvail.has(sid) : selIn.has(sid);
+    row.classList.toggle('selected', on);
+    const cb = row.querySelector('.groupSampleCheckbox');
+    if (cb instanceof HTMLInputElement) cb.checked = on;
+  }
+  const addBtn = els.groupsList.querySelector('.groupBatchAddSelectedBtn');
+  if (addBtn instanceof HTMLButtonElement) addBtn.disabled = !(state.groupEditor.selected_available_ids || []).length;
+  const removeBtn = els.groupsList.querySelector('.groupBatchRemoveSelectedBtn');
+  if (removeBtn instanceof HTMLButtonElement) removeBtn.disabled = !(state.groupEditor.selected_in_group_ids || []).length;
+}
+
 function parseTaggedNumber(token, label) {
   const lbl = String(label || '').trim();
   if (!lbl) return null;
@@ -839,6 +1023,104 @@ function normalizeSample(raw) {
   };
 }
 
+function normalizeGroup(raw, validSampleIds = null) {
+  const g = (raw && typeof raw === 'object') ? raw : {};
+  const validSet = validSampleIds instanceof Set ? validSampleIds : null;
+  const legacyRefs = collectGroupSampleRefs(g);
+  const sampleIds = [];
+  for (const sid of legacyRefs) {
+    const id = String(sid || '').trim();
+    if (!id) continue;
+    if (validSet && !validSet.has(id)) continue;
+    if (!sampleIds.includes(id)) sampleIds.push(id);
+  }
+  return {
+    id: String(g.id || uid('grp')),
+    name: String(g.name || '').trim() || 'Group',
+    sample_ids: sampleIds,
+  };
+}
+
+function collectGroupSampleRefs(rawGroup) {
+  const g = (rawGroup && typeof rawGroup === 'object') ? rawGroup : {};
+  const refs = []
+    .concat(Array.isArray(g.sample_ids) ? g.sample_ids : [])
+    .concat(Array.isArray(g.sampleIds) ? g.sampleIds : [])
+    .concat(Array.isArray(g.samples) ? g.samples : [])
+    .concat(Array.isArray(g.sample_names) ? g.sample_names : [])
+    .concat(Array.isArray(g.sampleNames) ? g.sampleNames : []);
+  const out = [];
+  for (const ref of refs) {
+    if (ref === null || ref === undefined) continue;
+    if (typeof ref === 'string' || typeof ref === 'number') {
+      out.push(String(ref));
+      continue;
+    }
+    if (typeof ref === 'object') {
+      const candidates = [
+        ref.id,
+        ref.sample_id,
+        ref.sampleId,
+        ref.name,
+        ref.sample_name,
+        ref.sampleName,
+      ];
+      for (const c of candidates) {
+        const token = String(c || '').trim();
+        if (!token) continue;
+        out.push(token);
+      }
+    }
+  }
+  return out;
+}
+
+function resolveGroupSampleIds(project, rawGroup) {
+  const samples = Array.isArray(project?.samples) ? project.samples : [];
+  const sampleIds = new Set();
+  const sampleIdByName = new Map();
+  for (const s of samples) {
+    const sid = String(s?.id || '').trim();
+    const name = String(s?.name || '').trim();
+    if (!sid) continue;
+    sampleIds.add(sid);
+    if (name) {
+      sampleIdByName.set(name, sid);
+      sampleIdByName.set(name.toLowerCase(), sid);
+    }
+  }
+  const refs = collectGroupSampleRefs(rawGroup);
+  const resolved = [];
+  for (const ref of refs) {
+    const token = String(ref || '').trim();
+    if (!token) continue;
+    if (sampleIds.has(token)) {
+      if (!resolved.includes(token)) resolved.push(token);
+      continue;
+    }
+    const byName = sampleIdByName.get(token) || sampleIdByName.get(token.toLowerCase());
+    if (byName && !resolved.includes(byName)) resolved.push(byName);
+  }
+  return resolved;
+}
+
+function normalizeProjectGroups(project) {
+  if (!project || typeof project !== 'object') return;
+  const groupsRaw = Array.isArray(project.groups) ? project.groups : [];
+  const seen = new Set();
+  const groups = [];
+  for (const raw of groupsRaw) {
+    const g = normalizeGroup(raw, null);
+    const resolved = resolveGroupSampleIds(project, raw);
+    const fromG = resolveGroupSampleIds(project, g);
+    g.sample_ids = Array.from(new Set(resolved.concat(fromG)));
+    if (seen.has(g.id)) continue;
+    seen.add(g.id);
+    groups.push(g);
+  }
+  project.groups = groups;
+}
+
 function normalizeProjectMeta(raw) {
   const m = (raw && typeof raw === 'object') ? raw : {};
   const owner = String(m.owner_name || m.user_name || '').trim();
@@ -904,6 +1186,7 @@ function defaultProject() {
       comments: [],
     },
     samples: [],
+    groups: [],
   };
 }
 
@@ -1022,6 +1305,21 @@ function updateNewSampleNameSuggestion(force = false) {
   els.newSampleName.dataset.autofill = '1';
 }
 
+function nextGroupDefaultName() {
+  const names = new Set((state.project?.groups || []).map((g) => String(g.name || '').trim()));
+  let k = Math.max(1, (state.project?.groups || []).length + 1);
+  while (names.has(`Group ${k}`)) k += 1;
+  return `Group ${k}`;
+}
+
+function updateNewGroupNameSuggestion(force = false) {
+  if (!els.newGroupName) return;
+  const current = String(els.newGroupName.value || '').trim();
+  if (!force && current) return;
+  els.newGroupName.value = nextGroupDefaultName();
+  els.newGroupName.dataset.autofill = '1';
+}
+
 function sampleColorPickerFromHex(hex) {
   const rgb = hexToRgb(hex);
   const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
@@ -1138,11 +1436,16 @@ function applySampleColorPicker() {
 }
 
 function renderSamplesList() {
+  normalizeProjectGroups(state.project);
   const samples = (state.project.samples || []).map((s) => normalizeSample(s));
   ensureSampleColors(samples);
   state.project.samples = samples;
   if (!samples.length) {
     els.samplesList.innerHTML = '<div class="muted">No samples yet.</div>';
+    renderGroupsPanel();
+    if (els.groupLegendEditorModal && !els.groupLegendEditorModal.classList.contains('hidden')) {
+      renderGroupLegendEditor();
+    }
     renderProjectInfo();
     return;
   }
@@ -1273,7 +1576,185 @@ function renderSamplesList() {
     renderSummaryFromCache();
   }
   updateNewSampleNameSuggestion(false);
+  renderGroupsPanel();
+  if (els.groupLegendEditorModal && !els.groupLegendEditorModal.classList.contains('hidden')) {
+    renderGroupLegendEditor();
+  }
   renderProjectInfo();
+}
+
+function renderGroupsPanel() {
+  if (!els.groupsList) return;
+  if (!state.project) return;
+  const activeEl = document.activeElement;
+  const keepSearchFocus = activeEl instanceof HTMLInputElement && activeEl.classList.contains('groupSearchInput');
+  const keepSelStart = keepSearchFocus ? activeEl.selectionStart : null;
+  const keepSelEnd = keepSearchFocus ? activeEl.selectionEnd : null;
+  const keepEditFocus = activeEl instanceof HTMLInputElement && activeEl.classList.contains('groupNameEditInput');
+  const keepEditGid = keepEditFocus ? String(activeEl.dataset.gid || '') : '';
+  const keepEditSelStart = keepEditFocus ? activeEl.selectionStart : null;
+  const keepEditSelEnd = keepEditFocus ? activeEl.selectionEnd : null;
+  normalizeProjectGroups(state.project);
+  const groups = state.project.groups || [];
+  const samples = state.project.samples || [];
+  const groupEditor = state.groupEditor || (state.groupEditor = {
+    selected_group_id: null,
+    search: '',
+    selected_available_ids: [],
+    selected_in_group_ids: [],
+    anchor_available_id: null,
+    anchor_in_group_id: null,
+  });
+
+  if (!groups.length) {
+    groupEditor.selected_group_id = null;
+    els.groupsList.innerHTML = '<div class="muted">No groups yet.</div>';
+    updateNewGroupNameSuggestion(false);
+    return;
+  }
+
+  if (!groupEditor.selected_group_id || !groups.some((g) => g.id === groupEditor.selected_group_id)) {
+    groupEditor.selected_group_id = groups[0].id;
+  }
+  const selectedGroup = groups.find((g) => g.id === groupEditor.selected_group_id) || groups[0];
+  const matchesQuery = makeWildcardMatcher(groupEditor.search);
+
+  const available = [];
+  const inGroup = [];
+  for (const s of samples) {
+    if (!matchesQuery(s.name || s.id)) continue;
+    if (selectedGroup.sample_ids.includes(s.id)) inGroup.push(s);
+    else available.push(s);
+  }
+  const availableIds = available.map((s) => s.id);
+  const inGroupIds = inGroup.map((s) => s.id);
+  const availableSet = new Set(availableIds);
+  const inGroupSet = new Set(inGroupIds);
+  groupEditor.selected_available_ids = (groupEditor.selected_available_ids || []).filter((id) => availableSet.has(id));
+  groupEditor.selected_in_group_ids = (groupEditor.selected_in_group_ids || []).filter((id) => inGroupSet.has(id));
+  if (!availableSet.has(groupEditor.anchor_available_id || '')) groupEditor.anchor_available_id = null;
+  if (!inGroupSet.has(groupEditor.anchor_in_group_id || '')) groupEditor.anchor_in_group_id = null;
+  const selAvail = new Set(groupEditor.selected_available_ids || []);
+  const selIn = new Set(groupEditor.selected_in_group_ids || []);
+
+  const groupRows = groups.map((g) => {
+    const selected = g.id === selectedGroup.id;
+    const isEditing = String(groupEditor.editing_group_id || '') === g.id;
+    const editValue = isEditing ? String(groupEditor.editing_group_name || g.name || '') : '';
+    return `
+      <div class="groupRow ${selected ? 'active' : ''}">
+        ${isEditing
+          ? `<input class="groupNameEditInput" data-gid="${g.id}" type="text" value="${escapeHtml(editValue)}" />`
+          : `<button class="groupSelectBtn ${selected ? 'active' : ''}" data-gid="${g.id}" type="button">${escapeHtml(g.name)}</button>`
+        }
+        <span class="groupRowCount mono">${g.sample_ids.length}</span>
+        <div class="groupHeaderActions">
+          <button class="editGroupNameBtn iconBtn" data-gid="${g.id}" type="button" title="${isEditing ? 'Save name' : 'Rename group'}">${isEditing ? '✓' : '✎'}</button>
+          <button class="removeGroupBtn iconBtn groupDeleteBtn" data-gid="${g.id}" type="button" title="Delete group" aria-label="Delete group">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  const availableRows = available.map((s) => `
+    <div class="groupSampleRow groupSampleRowSelectable ${selAvail.has(s.id) ? 'selected' : ''}" data-list="available" data-sid="${s.id}">
+      <label class="groupSampleCheckWrap">
+        <input class="groupSampleCheckbox" data-list="available" data-sid="${s.id}" type="checkbox" ${selAvail.has(s.id) ? 'checked' : ''} />
+      </label>
+      <span class="groupSampleName">${escapeHtml(s.name || s.id)}</span>
+      <button class="addToGroupBtn groupMoveBtn" data-gid="${selectedGroup.id}" data-sid="${s.id}" type="button" title="Add to group" aria-label="Add to group">→</button>
+    </div>`).join('');
+  const inGroupRows = inGroup.map((s) => `
+    <div class="groupSampleRow groupSampleRowSelectable ${selIn.has(s.id) ? 'selected' : ''}" data-list="in_group" data-sid="${s.id}">
+      <label class="groupSampleCheckWrap">
+        <input class="groupSampleCheckbox" data-list="in_group" data-sid="${s.id}" type="checkbox" ${selIn.has(s.id) ? 'checked' : ''} />
+      </label>
+      <span class="groupSampleName">${escapeHtml(s.name || s.id)}</span>
+      <button class="removeFromGroupBtn groupMoveBtn groupMoveBackBtn" data-gid="${selectedGroup.id}" data-sid="${s.id}" type="button" title="Remove from group" aria-label="Remove from group">←</button>
+    </div>`).join('');
+
+  els.groupsList.innerHTML = `
+    <div class="groupEditorLayout">
+      <div class="groupChooser">
+        ${groupRows}
+      </div>
+      <div class="groupEditorMain">
+        <label>Search samples
+          <input class="groupSearchInput" type="text" value="${escapeHtml(groupEditor.search || '')}" placeholder="Filter by sample name (* and ? supported)" />
+        </label>
+        <div class="row compact wrap">
+          <button class="groupBulkAddBtn" data-gid="${selectedGroup.id}" type="button">Add Filtered</button>
+          <button class="groupBulkRemoveBtn topbarActionBtn" data-gid="${selectedGroup.id}" type="button">Remove Filtered</button>
+          <span class="muted">${inGroup.length} in group · ${available.length} available</span>
+        </div>
+        <div class="groupDualList">
+          <div>
+            <div class="groupListTitle">Available</div>
+            <div class="groupSampleList">${availableRows || '<div class="muted">No samples in this view.</div>'}</div>
+          </div>
+          <div class="groupBatchArrows">
+            <button class="groupBatchAddSelectedBtn groupMoveBtn groupBatchBtn" data-gid="${selectedGroup.id}" type="button" title="Move selected to group" aria-label="Move selected to group" ${groupEditor.selected_available_ids.length ? '' : 'disabled'}>››</button>
+            <button class="groupBatchRemoveSelectedBtn groupMoveBtn groupMoveBackBtn groupBatchBtn" data-gid="${selectedGroup.id}" type="button" title="Remove selected from group" aria-label="Remove selected from group" ${groupEditor.selected_in_group_ids.length ? '' : 'disabled'}>‹‹</button>
+          </div>
+          <div>
+            <div class="groupListTitle">In Group</div>
+            <div class="groupSampleList">${inGroupRows || '<div class="muted">No samples in this group.</div>'}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  if (keepSearchFocus) {
+    const nextInput = els.groupsList.querySelector('.groupSearchInput');
+    if (nextInput instanceof HTMLInputElement) {
+      nextInput.focus();
+      const len = nextInput.value.length;
+      const s = Number.isFinite(keepSelStart) ? clamp(Number(keepSelStart), 0, len) : len;
+      const e = Number.isFinite(keepSelEnd) ? clamp(Number(keepSelEnd), s, len) : s;
+      nextInput.setSelectionRange(s, e);
+    }
+  }
+  if (groupEditor.editing_group_id) {
+    const input = els.groupsList.querySelector(`.groupNameEditInput[data-gid="${groupEditor.editing_group_id}"]`);
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      const len = input.value.length;
+      let s = 0;
+      let e = len;
+      if (keepEditFocus && keepEditGid === groupEditor.editing_group_id) {
+        s = Number.isFinite(keepEditSelStart) ? clamp(Number(keepEditSelStart), 0, len) : len;
+        e = Number.isFinite(keepEditSelEnd) ? clamp(Number(keepEditSelEnd), s, len) : s;
+      }
+      input.setSelectionRange(s, e);
+    }
+  }
+  if (els.groupLegendEditorModal && !els.groupLegendEditorModal.classList.contains('hidden')) {
+    renderGroupLegendEditor();
+  }
+  updateNewGroupNameSuggestion(false);
+}
+
+function commitGroupRename(gid, nextRaw, opts = {}) {
+  const next = String(nextRaw || '').trim();
+  const cancelIfEmpty = opts.cancelIfEmpty !== false;
+  const group = (state.project?.groups || []).find((g) => g.id === gid);
+  state.groupEditor.editing_group_id = null;
+  state.groupEditor.editing_group_name = '';
+  if (!group) return false;
+  if (!next && cancelIfEmpty) {
+    renderGroupsPanel();
+    return false;
+  }
+  if (!next) return false;
+  if (next === String(group.name || '')) {
+    renderGroupsPanel();
+    return false;
+  }
+  group.name = next;
+  markProjectChanged('group rename');
+  renderGroupsPanel();
+  refreshVizSelectors();
+  renderProjectInfo();
+  queueProjectAutosave('group rename');
+  return true;
 }
 
 function getSampleById(sampleId) {
@@ -1285,6 +1766,88 @@ function setAllSamplesCollapsed(collapsed) {
     s.collapsed = Boolean(collapsed);
   }
   renderSamplesList();
+}
+
+function syncVizGroupFilterWithGroups() {
+  const gf = state.vizGroupFilter || (state.vizGroupFilter = { open: false, query: '', selected_group_ids: [], known_group_ids: [], initialized: false });
+  const groups = Array.isArray(state.project?.groups) ? state.project.groups : [];
+  const curIds = groups.map((g) => String(g.id || '')).filter((id) => id);
+  const prevKnown = Array.isArray(gf.known_group_ids) ? gf.known_group_ids : [];
+  const prevSel = new Set(Array.isArray(gf.selected_group_ids) ? gf.selected_group_ids : []);
+  const prevAllSelected = prevKnown.length > 0 && prevKnown.every((id) => prevSel.has(id));
+
+  if (!gf.initialized) {
+    gf.selected_group_ids = [...curIds];
+    gf.known_group_ids = [...curIds];
+    gf.initialized = true;
+    return;
+  }
+  gf.selected_group_ids = (Array.isArray(gf.selected_group_ids) ? gf.selected_group_ids : []).filter((id) => curIds.includes(id));
+  if (prevAllSelected) {
+    gf.selected_group_ids = [...curIds];
+  }
+  gf.known_group_ids = [...curIds];
+  if (!groups.length) {
+    gf.selected_group_ids = [];
+  }
+}
+
+function selectedVizGroupSet() {
+  normalizeProjectGroups(state.project);
+  const groups = Array.isArray(state.project?.groups) ? state.project.groups : [];
+  syncVizGroupFilterWithGroups();
+  const ids = new Set(Array.isArray(state.vizGroupFilter?.selected_group_ids) ? state.vizGroupFilter.selected_group_ids : []);
+  const allSelected = groups.length > 0 && groups.every((g) => ids.has(g.id));
+  return { ids, allSelected, groups };
+}
+
+function filteredVizSamples() {
+  const samples = Array.isArray(state.project?.samples) ? state.project.samples : [];
+  const { ids, allSelected, groups } = selectedVizGroupSet();
+  if (!groups.length || allSelected) return samples;
+  if (!ids.size) return [];
+  const allowed = new Set();
+  for (const g of groups) {
+    if (!ids.has(g.id)) continue;
+    const memberIds = resolveGroupSampleIds(state.project, g);
+    for (const sid of memberIds) allowed.add(String(sid || ''));
+  }
+  return samples.filter((s) => allowed.has(String(s.id || '')));
+}
+
+function renderVizGroupFilterUI() {
+  if (!els.vizGroupFilterBtn || !els.vizGroupFilterDropdown || !els.vizGroupFilterOptions || !els.vizGroupFilterToggleAllBtn || !els.vizGroupFilterSearch) return;
+  const gf = state.vizGroupFilter || (state.vizGroupFilter = { open: false, query: '', selected_group_ids: [], known_group_ids: [], initialized: false });
+  const { ids, allSelected, groups } = selectedVizGroupSet();
+  const query = String(gf.query || '').trim().toLowerCase();
+  const visibleGroups = groups.filter((g) => !query || String(g.name || '').toLowerCase().includes(query));
+
+  let summary = 'All samples';
+  if (groups.length) {
+    if (allSelected) summary = 'All groups';
+    else if (!ids.size) summary = 'No groups';
+    else if (ids.size <= 2) {
+      const names = groups.filter((g) => ids.has(g.id)).map((g) => String(g.name || '').trim()).filter(Boolean);
+      summary = names.join(', ');
+    } else {
+      summary = `${ids.size} groups`;
+    }
+  }
+  els.vizGroupFilterBtn.textContent = summary || 'Group filter';
+  els.vizGroupFilterBtn.setAttribute('aria-expanded', gf.open ? 'true' : 'false');
+  els.vizGroupFilterDropdown.classList.toggle('hidden', !gf.open);
+  els.vizGroupFilterSearch.value = gf.query || '';
+
+  els.vizGroupFilterToggleAllBtn.textContent = allSelected ? 'Deselect all' : 'Select all';
+  els.vizGroupFilterToggleAllBtn.disabled = !groups.length;
+
+  els.vizGroupFilterOptions.innerHTML = visibleGroups.length
+    ? visibleGroups.map((g) => `
+      <label class="groupFilterOption">
+        <input class="vizGroupFilterOption" data-gid="${g.id}" type="checkbox" ${ids.has(g.id) ? 'checked' : ''} />
+        <span>${escapeHtml(g.name || g.id)}</span>
+      </label>`).join('')
+    : '<div class="muted">No groups match this filter.</div>';
 }
 
 function getSelectedReplica() {
@@ -1348,9 +1911,10 @@ async function ensureDatasetForSelectedReplica() {
 }
 
 function refreshVizSelectors() {
-  const samples = state.project.samples || [];
+  const samples = filteredVizSamples();
   const prevS = els.vizSampleSelect.value;
   const prevR = els.vizReplicaSelect.value;
+  renderVizGroupFilterUI();
 
   els.vizSampleSelect.innerHTML = samples
     .map((s) => `<option value="${s.id}">${s.name}</option>`)
@@ -1374,7 +1938,7 @@ function refreshReplicaSelector(prevReplicaId = null) {
   }
 }
 
-function clearVisualizationState(reason = 'Select a sample/replica first.') {
+function clearVisualizationState(reason = '') {
   state.datasetId = null;
   state.loadedSampleId = null;
   state.loadedReplicaId = null;
@@ -1385,10 +1949,17 @@ function clearVisualizationState(reason = 'Select a sample/replica first.') {
   state.domains = [];
   state.lo = 0;
   state.hi = 0;
+  state.groupEditor.selected_group_id = null;
+  state.groupEditor.search = '';
+  state.groupEditor.selected_available_ids = [];
+  state.groupEditor.selected_in_group_ids = [];
+  state.groupEditor.anchor_available_id = null;
+  state.groupEditor.anchor_in_group_id = null;
+  clearPendingGroupRowClick();
   state.plotMeta = null;
   state.heatmapMeta = null;
   state.drag = null;
-  els.vizInfo.textContent = reason;
+  if (els.vizInfo) els.vizInfo.textContent = reason || '';
   els.metrics.textContent = '';
   setDomainsSummary('Domains summary');
   renderDomainsTable([]);
@@ -1423,7 +1994,7 @@ function switchTab(tabId) {
 function maybeAutoLoadSelectedReplica(force = false) {
   const { sample, replica } = getSelectedReplica();
   if (!sample || !replica) {
-    clearVisualizationState('Select a sample/replica first.');
+    clearVisualizationState('');
     return;
   }
   if (!force && state.loadedSampleId === sample.id && state.loadedReplicaId === replica.id) return;
@@ -3327,7 +3898,7 @@ async function loadSelectedReplica() {
   syncProjectFromConfigForm();
   const { sample, replica } = getSelectedReplica();
   if (!sample || !replica) {
-    els.vizInfo.textContent = 'Select a sample/replica first.';
+    if (els.vizInfo) els.vizInfo.textContent = '';
     return;
   }
   const reqKey = replicaDataCacheKey(sample.id, replica.id);
@@ -3337,7 +3908,7 @@ async function loadSelectedReplica() {
     ensureReplicaGeometryFromFilename(replica);
     applyDomainThresholdForSelection();
 
-    els.vizInfo.textContent = 'Loading replica...';
+    if (els.vizInfo) els.vizInfo.textContent = 'Loading replica...';
     const payload = {
       csv_name: replica.file_name || replica.name,
       csv_text: replica.csv_text,
@@ -3347,6 +3918,16 @@ async function loadSelectedReplica() {
 
     const dataKey = replicaDataCacheKey(sample.id, replica.id);
     const cfgKey = analysisCacheKey(state.project);
+    const hasUsableHeatmap = (hm) =>
+      Boolean(
+        hm
+        && Array.isArray(hm.centers_disp)
+        && Array.isArray(hm.widths_disp)
+        && Array.isArray(hm.score_grid)
+        && hm.centers_disp.length
+        && hm.widths_disp.length
+        && hm.score_grid.length
+      );
     let data = state.replicaDataCache[dataKey];
     if (!data || data.cfg_key !== cfgKey || !Array.isArray(data.disp) || !Array.isArray(data.force) || !data.disp.length) {
       try {
@@ -3362,7 +3943,8 @@ async function loadSelectedReplica() {
     const hasCachedMetrics = hasUsableCachedMetrics(replica);
     const hasCachedDomains = hasUsableCachedDomains(replica);
     const needBackendNow = !hasCachedMetrics || !hasCachedDomains;
-    if (needBackendNow && !data.dataset_id) {
+    const needHeatmapNow = !hasUsableHeatmap(data?.heatmap) && !hasUsableHeatmap(replica?.cache?.heatmap);
+    if ((needBackendNow || needHeatmapNow) && !data.dataset_id) {
       try {
         data = await fetchJson('/api/analyze-csv', payload);
         data.cfg_key = cfgKey;
@@ -3459,7 +4041,7 @@ async function loadSelectedReplica() {
       syncToeControlsVisibility();
     }
 
-    els.vizInfo.textContent = `${sample.name} / ${replica.name} (${n} points)`;
+    if (els.vizInfo) els.vizInfo.textContent = `${sample.name} / ${replica.name} (${n} points)`;
     if (replica.cache?.status === 'ok' && replica.cache?.metrics) {
       syncWindowFromControls();
       drawPlot();
@@ -3775,6 +4357,24 @@ function buildSampleAggregateRows(replicaRows) {
   return out;
 }
 
+function hasFiniteAggregateSampleMetrics(sampleRows) {
+  const rows = Array.isArray(sampleRows) ? sampleRows : [];
+  return rows.some((row) => SUMMARY_METRIC_COLUMNS.some((c) => Number.isFinite(optionalFiniteNumber(row?.[`${c.key}_mean`]))));
+}
+
+function collectReplicasNeedingMetrics() {
+  const items = [];
+  for (const s of state.project?.samples || []) {
+    for (const r of s.replicas || []) {
+      const hasCsv = String(r?.csv_text || '').trim().length > 0;
+      if (!hasCsv) continue;
+      if (hasUsableCachedMetrics(r)) continue;
+      items.push({ sample: s, replica: r });
+    }
+  }
+  return items;
+}
+
 function summaryRangeText(r) {
   if (!Number.isFinite(r?.disp_lo) || !Number.isFinite(r?.disp_hi)) return 'n/a';
   return `${r.disp_lo}..${r.disp_hi}`;
@@ -3891,6 +4491,17 @@ function renderSummaryTables(replicaRows, sourceLabel = '') {
 function renderSummaryFromCache() {
   const rows = buildCachedReplicaRows();
   renderSummaryTables(rows, 'data status');
+  const hasAgg = hasFiniteAggregateSampleMetrics(state.summaryData?.sampleRows);
+  if (hasAgg) {
+    state.summaryAutoPrecomputeQueued = false;
+  } else if (!state.summaryAutoPrecomputeQueued && !state.precomputeQueueRunning) {
+    const toCompute = collectReplicasNeedingMetrics();
+    if (toCompute.length) {
+      state.summaryAutoPrecomputeQueued = true;
+      setPrecomputeInfo(`Preparing aggregate metrics for ${toCompute.length} replica(s)...`);
+      enqueuePrecomputeItems(toCompute);
+    }
+  }
   renderMetricExplorerSection();
   drawSummaryPlot();
   renderProjectInfo();
@@ -4066,10 +4677,343 @@ function metricExplorerDef(metricKey) {
   return METRIC_EXPLORER_METRIC_BY_KEY[metricKey] || METRIC_EXPLORER_METRICS[0];
 }
 
+function renderMetricAxisLabelSuggestions() {
+  const setComboValues = (comboEl, values) => {
+    if (!(comboEl instanceof HTMLElement)) return;
+    comboEl.dataset.comboValuesJson = JSON.stringify(Array.from(new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean))));
+    if (comboEl.dataset.comboReady === '1') {
+      populateFontSizeComboMenu(comboEl);
+    }
+  };
+  setComboValues(els.metricExplorerXAxisLabelCombo, ['Samples', 'Groups']);
+  const yOpts = METRIC_EXPLORER_METRICS
+    .map((m) => `${m.label} (${m.unit})`)
+    .concat(METRIC_EXPLORER_METRICS.map((m) => m.label));
+  setComboValues(els.metricExplorerYAxisLabelCombo, yOpts);
+  if (els.metricExplorerYAxisLabelCombo instanceof HTMLElement) {
+    const curKey = String(state.metricExplorer?.current?.metric_key || '');
+    const def = metricExplorerDef(curKey);
+    const exact = `${def.label} (${def.unit})`;
+    els.metricExplorerYAxisLabelCombo.dataset.comboHighlightValue = exact;
+    els.metricExplorerYAxisLabelCombo.dataset.comboHighlightLabel = 'shown metric';
+    if (els.metricExplorerYAxisLabelCombo.dataset.comboReady === '1') {
+      populateFontSizeComboMenu(els.metricExplorerYAxisLabelCombo);
+    }
+  }
+}
+
+const METRIC_GROUP_PATTERN_OPTIONS = [
+  { value: '', label: 'Solid' },
+  { value: '/', label: 'Slash /' },
+  { value: '\\', label: 'Backslash \\' },
+  { value: 'x', label: 'Cross x' },
+  { value: '-', label: 'Dash -' },
+  { value: '|', label: 'Pipe |' },
+  { value: '.', label: 'Dot .' },
+  { value: '+', label: 'Plus +' },
+];
+
+function metricPatternToken(patternValue) {
+  const p = String(patternValue || '');
+  if (p === '/') return 'slash';
+  if (p === '\\') return 'backslash';
+  if (p === 'x') return 'cross';
+  if (p === '-') return 'dash';
+  if (p === '|') return 'pipe';
+  if (p === '.') return 'dot';
+  if (p === '+') return 'plus';
+  return 'solid';
+}
+
+function normalizeMetricExplorerGroupLegends(raw = []) {
+  const src = Array.isArray(raw) ? raw : [];
+  const out = [];
+  const seen = new Set();
+  for (const item of src) {
+    if (!item || typeof item !== 'object') continue;
+    const id = String(item.id || uid('mleg')).trim();
+    if (!id || seen.has(id)) continue;
+    const pattern = METRIC_GROUP_PATTERN_OPTIONS.some((p) => p.value === String(item.pattern || '')) ? String(item.pattern || '') : '';
+    out.push({
+      id,
+      label: String(item.label || '').trim() || `Legend ${out.length + 1}`,
+      color: normalizeHexColor(item.color, '#a9d0f5'),
+      pattern,
+    });
+    seen.add(id);
+  }
+  return out;
+}
+
+function normalizeMetricExplorerGroupAssignment(raw = {}) {
+  const src = (raw && typeof raw === 'object') ? raw : {};
+  const out = {};
+  for (const [k, v] of Object.entries(src)) {
+    const key = String(k || '').trim();
+    const val = String(v || '').trim();
+    if (!key || !val) continue;
+    out[key] = val;
+  }
+  return out;
+}
+
+function ensureMetricExplorerGroupLegendState() {
+  const cur = state.metricExplorer?.current || {};
+  cur.group_legends = normalizeMetricExplorerGroupLegends(cur.group_legends || []);
+  cur.group_assignment = normalizeMetricExplorerGroupAssignment(cur.group_assignment || {});
+  const sampleById = new Map((state.project?.samples || []).map((s) => [String(s.id || '').trim(), s]).filter(([id]) => id));
+  const sampleIds = Array.from(sampleById.keys());
+
+  if (!cur.group_legends.length) {
+    for (const sid of sampleIds) {
+      const s = sampleById.get(sid);
+      cur.group_legends.push({
+        id: uid('mleg'),
+        label: String(s.name || sid).trim() || sid,
+        color: normalizeHexColor(s.color_hex, '#a9d0f5'),
+        pattern: '',
+      });
+    }
+  }
+  const legendIdSet = new Set(cur.group_legends.map((l) => l.id));
+  const existingBySample = {};
+  for (const [k, v] of Object.entries(cur.group_assignment || {})) {
+    const key = String(k || '').trim();
+    const lid = String(v || '').trim();
+    if (!lid || !legendIdSet.has(lid)) continue;
+    if (sampleById.has(key)) {
+      existingBySample[key] = lid;
+      continue;
+    }
+    const parts = key.split('::');
+    if (parts.length >= 2) {
+      const sid = String(parts[parts.length - 1] || '').trim();
+      if (sampleById.has(sid) && !existingBySample[sid]) existingBySample[sid] = lid;
+    }
+  }
+  const nextAssignment = {};
+  for (const sid of sampleIds) {
+    const lid = String(existingBySample[sid] || '').trim();
+    if (lid && legendIdSet.has(lid)) nextAssignment[sid] = lid;
+  }
+  cur.group_assignment = nextAssignment;
+  state.metricExplorer.current = cur;
+}
+
+function migrateLegacyGroupSeriesMapToLegendState(legacyMap = {}) {
+  const map = (legacyMap && typeof legacyMap === 'object') ? legacyMap : {};
+  const legends = [];
+  const legendIdByLabel = new Map();
+  const assignmentBySampleName = {};
+  for (const [sampleName, itemRaw] of Object.entries(map)) {
+    const sample = String(sampleName || '').trim();
+    if (!sample) continue;
+    const item = (itemRaw && typeof itemRaw === 'object') ? itemRaw : {};
+    const label = String(item.label || sample).trim() || sample;
+    let lid = legendIdByLabel.get(label);
+    if (!lid) {
+      lid = uid('mleg');
+      legends.push({
+        id: lid,
+        label,
+        color: normalizeHexColor(item.color, '#a9d0f5'),
+        pattern: METRIC_GROUP_PATTERN_OPTIONS.some((p) => p.value === String(item.pattern || '')) ? String(item.pattern || '') : '',
+      });
+      legendIdByLabel.set(label, lid);
+    }
+    assignmentBySampleName[sample] = lid;
+  }
+  return { legends, assignmentBySampleName };
+}
+
+function renderMetricExplorerGroupSeriesMap() {
+  if (!els.metricExplorerGroupSeriesMap) return;
+  ensureMetricExplorerGroupLegendState();
+  const legends = state.metricExplorer?.current?.group_legends || [];
+  const assignedCount = Object.keys(state.metricExplorer?.current?.group_assignment || {}).length;
+  els.metricExplorerGroupSeriesMap.innerHTML = `
+    <div class="row compact wrap" style="justify-content:space-between;align-items:center;padding:8px;">
+      <div class="muted">${legends.length} labels · ${assignedCount} sample assignments</div>
+      <button id="openGroupLegendEditorBtn" type="button">Grouping legend editor</button>
+    </div>`;
+}
+
+function renderGroupLegendEditor() {
+  ensureMetricExplorerGroupLegendState();
+  const cur = state.metricExplorer.current;
+  const legends = cur.group_legends || [];
+  const editor = state.groupLegendEditor || (state.groupLegendEditor = { selected_label_id: null, search: '' });
+  if (!editor.selected_label_id || !legends.some((l) => l.id === editor.selected_label_id)) {
+    editor.selected_label_id = legends[0]?.id || null;
+  }
+  const selectedLabelId = String(editor.selected_label_id || '');
+  const selectedLabel = legends.find((l) => l.id === selectedLabelId) || legends[0] || null;
+  const qMatch = makeWildcardMatcher(editor.search || '');
+  const sampleById = new Map((state.project?.samples || []).map((s) => [String(s.id || '').trim(), s]).filter(([id]) => id));
+  const groups = Array.isArray(state.project?.groups) ? state.project.groups : [];
+  const groupedIds = new Set();
+  const sections = [];
+  for (const g of groups) {
+    const gid = String(g.id || '').trim();
+    const gname = String(g.name || gid || 'Group');
+    const memberIds = resolveGroupSampleIds(state.project, g).filter((sid) => sampleById.has(String(sid || '').trim()));
+    memberIds.forEach((sid) => groupedIds.add(String(sid || '').trim()));
+    sections.push({ key: `grp:${gid}`, label: gname, sample_ids: memberIds });
+  }
+  const ungrouped = Array.from(sampleById.keys()).filter((sid) => !groupedIds.has(sid));
+  if (ungrouped.length) sections.push({ key: 'grp:__ungrouped__', label: 'Ungrouped', sample_ids: ungrouped });
+  const assignedCountByLegend = {};
+  for (const lid of Object.values(cur.group_assignment || {})) {
+    const key = String(lid || '');
+    if (!key) continue;
+    assignedCountByLegend[key] = (assignedCountByLegend[key] || 0) + 1;
+  }
+
+  if (els.groupLegendSeriesList) {
+    els.groupLegendSeriesList.innerHTML = legends.length
+      ? legends.map((l) => `
+        <div class="groupRow ${selectedLabelId === l.id ? 'active' : ''}">
+          <button class="groupSelectBtn legendSelectBtn ${selectedLabelId === l.id ? 'active' : ''}" data-lid="${l.id}" type="button">${escapeHtml(l.label || 'Label')}</button>
+          <span class="groupRowCount mono">${assignedCountByLegend[l.id] || 0}</span>
+          <div class="groupHeaderActions">
+            <span class="legendStylePreview pattern-${metricPatternToken(l.pattern)}" style="--legend-color:${escapeHtml(normalizeHexColor(l.color, '#a9d0f5'))};" title="Color/pattern preview"></span>
+            <input class="groupLegendColorInput" data-lid="${l.id}" type="color" value="${escapeHtml(normalizeHexColor(l.color, '#a9d0f5'))}" title="Label color" />
+            <select class="groupLegendPatternInput" data-lid="${l.id}" title="Label pattern">
+              ${METRIC_GROUP_PATTERN_OPTIONS.map((opt) => `<option value="${escapeHtml(opt.value)}" ${l.pattern === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+            </select>
+            <button class="editLegendBtn iconBtn" data-lid="${l.id}" type="button" title="Rename label">✎</button>
+            <button class="groupLegendDeleteBtn iconBtn" data-lid="${l.id}" type="button" title="Delete label">✕</button>
+          </div>
+        </div>`)
+        .join('')
+      : '<div class="muted">No labels yet.</div>';
+  }
+  if (els.groupLegendAssignmentList) {
+    const selectedSet = new Set();
+    const availableSet = new Set();
+    const unavailableSet = new Set();
+    for (const sid of sampleById.keys()) {
+      const s = sampleById.get(sid);
+      if (!qMatch(s?.name || sid)) continue;
+      const lid = String(cur.group_assignment?.[sid] || '').trim();
+      if (selectedLabel && lid === selectedLabel.id) selectedSet.add(sid);
+      else if (!lid) availableSet.add(sid);
+      else unavailableSet.add(sid);
+    }
+    let selectedTotal = 0;
+    let availableTotal = 0;
+    let unavailableTotal = 0;
+    const sectionHtml = (which) => sections.map((sec) => {
+      const ids = sec.sample_ids.filter((sid) => (which === 'in'
+        ? selectedSet.has(sid)
+        : which === 'avail'
+          ? availableSet.has(sid)
+          : unavailableSet.has(sid)));
+      if (which === 'in') selectedTotal += ids.length;
+      else if (which === 'avail') availableTotal += ids.length;
+      else unavailableTotal += ids.length;
+      const rows = ids.map((sid) => {
+        const s = sampleById.get(sid);
+        const assigned = legends.find((l) => l.id === cur.group_assignment?.[sid]);
+        return `
+          <div class="groupSampleRow ${which === 'unavail' ? 'legendUnavailableRow' : ''}">
+            <span class="groupSampleName">${escapeHtml(s?.name || sid)}${which === 'avail' && assigned ? ` <span class="muted">(${escapeHtml(assigned.label)})</span>` : ''}</span>
+            ${which === 'avail'
+              ? `<button class="legendAssignBtn groupMoveBtn" data-sid="${sid}" type="button" title="Assign to label">→</button>`
+              : which === 'in'
+                ? `<button class="legendUnassignBtn groupMoveBtn groupMoveBackBtn" data-sid="${sid}" type="button" title="Remove from label">←</button>`
+                : `<span class="muted mono">${escapeHtml(assigned?.label || '')}</span>`}
+          </div>`;
+      }).join('') || '<div class="muted" style="padding:6px 8px;">No samples in this section.</div>';
+      return `
+        <details class="legendGroupSection" open>
+          <summary>${escapeHtml(sec.label)} <span class="muted">(${ids.length})</span></summary>
+          <div>${rows}</div>
+        </details>`;
+    }).join('');
+    els.groupLegendAssignmentList.innerHTML = `
+      <div class="groupEditorMain">
+        <label>Search samples
+          <input id="groupLegendSearchInput" type="text" value="${escapeHtml(editor.search || '')}" placeholder="Filter by sample name (* and ? supported)" />
+        </label>
+        <div class="row compact wrap">
+          <button id="groupLegendAddFilteredBtn" type="button" ${selectedLabel ? '' : 'disabled'}>Add Filtered</button>
+          <button id="groupLegendRemoveFilteredBtn" type="button" class="topbarActionBtn" ${selectedLabel ? '' : 'disabled'}>Remove Filtered</button>
+          <span class="muted">${selectedTotal} in label · ${availableTotal} available · ${unavailableTotal} unavailable</span>
+        </div>
+        <div class="groupDualList">
+          <div>
+            <div class="groupListTitle">Available</div>
+            <div class="groupSampleList">${sectionHtml('avail')}</div>
+            <div class="groupListTitle muted" style="margin-top:8px;">Unavailable</div>
+            <div class="groupSampleList unavailableList">${sectionHtml('unavail')}</div>
+          </div>
+          <div class="groupBatchArrows">
+            <span class="muted mono">››</span>
+            <span class="muted mono">‹‹</span>
+          </div>
+          <div>
+            <div class="groupListTitle">In Label</div>
+            <div class="groupSampleList">${sectionHtml('in')}</div>
+          </div>
+        </div>
+      </div>`;
+    const searchEl = document.getElementById('groupLegendSearchInput');
+    if (searchEl instanceof HTMLInputElement) {
+      searchEl.addEventListener('input', () => {
+        editor.search = String(searchEl.value || '');
+        renderGroupLegendEditor();
+      });
+    }
+    document.getElementById('groupLegendAddFilteredBtn')?.addEventListener('click', () => {
+      if (!selectedLabel) return;
+      let changed = false;
+      for (const sid of availableSet) {
+        cur.group_assignment[sid] = selectedLabel.id;
+        changed = true;
+      }
+      if (!changed) return;
+      renderMetricExplorerGroupSeriesMap();
+      renderGroupLegendEditor();
+      drawMetricExplorerPlot();
+      queueProjectAutosave('metric explorer groups');
+    });
+    document.getElementById('groupLegendRemoveFilteredBtn')?.addEventListener('click', () => {
+      if (!selectedLabel) return;
+      let changed = false;
+      for (const sid of selectedSet) {
+        if (cur.group_assignment[sid] === selectedLabel.id) {
+          delete cur.group_assignment[sid];
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      ensureMetricExplorerGroupLegendState();
+      renderMetricExplorerGroupSeriesMap();
+      renderGroupLegendEditor();
+      drawMetricExplorerPlot();
+      queueProjectAutosave('metric explorer groups');
+    });
+  }
+}
+
+function setGroupLegendEditorOpen(open) {
+  if (!els.groupLegendEditorModal) return;
+  const on = Boolean(open);
+  els.groupLegendEditorModal.classList.toggle('hidden', !on);
+  if (on) renderGroupLegendEditor();
+}
+
 function clampFontPx(v, fallback, minV = 8, maxV = 40) {
   const n = Number(v);
   if (!Number.isFinite(n)) return fallback;
   return clamp(Math.round(n), minV, maxV);
+}
+
+function clampMetricGroupBarGap(v, fallback = 0.12) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return clamp(n, 0.0, 0.8);
 }
 
 function sanitizeLegacyTypography(raw = {}) {
@@ -4185,11 +5129,19 @@ function normalizeMetricExplorerPin(raw) {
   const p = (raw && typeof raw === 'object') ? raw : {};
   const metric_key = METRIC_EXPLORER_METRIC_BY_KEY[p.metric_key] ? p.metric_key : METRIC_EXPLORER_METRICS[0].key;
   const style = p.style === 'bar' ? 'bar' : 'dot';
+  const legacy = migrateLegacyGroupSeriesMapToLegendState(p?.settings?.group_series_map || {});
+  const legends = normalizeMetricExplorerGroupLegends((p?.settings?.group_legends || []).length ? p.settings.group_legends : legacy.legends);
   const settings = {
     sort: ['original', 'mean_desc', 'mean_asc'].includes(p?.settings?.sort) ? p.settings.sort : 'original',
     y_zero: p?.settings?.y_zero !== false,
     show_grid: p?.settings?.show_grid !== false,
     show_labels: Boolean(p?.settings?.show_labels),
+    show_error_bars: p?.settings?.show_error_bars !== false,
+    group_enabled: Boolean(p?.settings?.group_enabled),
+    group_show_legend: p?.settings?.group_show_legend !== false,
+    group_bar_gap: clampMetricGroupBarGap(p?.settings?.group_bar_gap, 0.12),
+    group_legends: legends,
+    group_assignment: normalizeMetricExplorerGroupAssignment(p?.settings?.group_assignment || {}),
     ...normalizeMetricTypography(p?.settings || {}, metric_key),
   };
   return {
@@ -4204,6 +5156,21 @@ function normalizeMetricExplorerPin(raw) {
 function normalizeMetricExplorerState(raw) {
   const m = (raw && typeof raw === 'object') ? raw : {};
   const cur = (m.current && typeof m.current === 'object') ? m.current : {};
+  const legacy = migrateLegacyGroupSeriesMapToLegendState(cur.group_series_map || {});
+  const curLegends = normalizeMetricExplorerGroupLegends((cur.group_legends || []).length ? cur.group_legends : legacy.legends);
+  const curAssign = normalizeMetricExplorerGroupAssignment(cur.group_assignment || {});
+  if (!Object.keys(curAssign).length && Object.keys(legacy.assignmentBySampleName || {}).length) {
+    const sampleById = new Map((state.project?.samples || []).map((s) => [String(s.id || ''), String(s.name || '').trim()]));
+    for (const g of (state.project?.groups || [])) {
+      for (const sid of resolveGroupSampleIds(state.project, g)) {
+        const sname = sampleById.get(String(sid || ''));
+        if (!sname) continue;
+        const lid = legacy.assignmentBySampleName[sname];
+        if (!lid) continue;
+        curAssign[String(sid || '').trim()] = lid;
+      }
+    }
+  }
   const metric_key = METRIC_EXPLORER_METRIC_BY_KEY[cur.metric_key] ? cur.metric_key : METRIC_EXPLORER_METRICS[0].key;
   const style = cur.style === 'bar' ? 'bar' : 'dot';
   const sort = ['original', 'mean_desc', 'mean_asc'].includes(cur.sort) ? cur.sort : 'original';
@@ -4218,7 +5185,13 @@ function normalizeMetricExplorerState(raw) {
       y_zero: cur.y_zero !== false,
       show_grid: cur.show_grid !== false,
       show_labels: Boolean(cur.show_labels),
+      show_error_bars: cur.show_error_bars !== false,
       ...normalizeMetricTypography(cur || {}, metric_key),
+      group_enabled: Boolean(cur.group_enabled),
+      group_show_legend: cur.group_show_legend !== false,
+      group_bar_gap: clampMetricGroupBarGap(cur.group_bar_gap, 0.12),
+      group_legends: curLegends,
+      group_assignment: curAssign,
       plot_width_px: Number.isFinite(Number(cur.plot_width_px)) ? Number(cur.plot_width_px) : 760,
       plot_height_px: Number.isFinite(Number(cur.plot_height_px)) ? Number(cur.plot_height_px) : 570,
     },
@@ -4495,6 +5468,7 @@ function renderProjectInfo() {
     ['Last save timestamp', lastSavedText],
     ['Last saved size', formatBytes(state.projectLastSavedBytes)],
     ['Samples', String(samples.length)],
+    ['Groups', String((state.project?.groups || []).length)],
     ['Replicas', String(nReplicas)],
     ['Replicas with CSV loaded', String(nCsv)],
     ['Replicas with computed cache', String(nWithCache)],
@@ -4641,9 +5615,15 @@ function ensureMetricExplorerControls() {
   const yZero = cur.y_zero !== false;
   const showGrid = cur.show_grid !== false;
   const showLabels = Boolean(cur.show_labels);
+  const showErrorBars = cur.show_error_bars !== false;
+  const groupEnabled = Boolean(cur.group_enabled);
+  const groupShowLegend = cur.group_show_legend !== false;
+  const groupBarGap = clampMetricGroupBarGap(cur.group_bar_gap, 0.12);
   const plotWidth = Number.isFinite(Number(cur.plot_width_px)) ? Number(cur.plot_width_px) : 760;
   const plotHeight = Number.isFinite(Number(cur.plot_height_px)) ? Number(cur.plot_height_px) : 570;
   const typo = normalizeMetricTypography(cur, key);
+  const groupLegends = normalizeMetricExplorerGroupLegends(cur.group_legends || []);
+  const groupAssignment = normalizeMetricExplorerGroupAssignment(cur.group_assignment || {});
   state.metricExplorer.current = {
     metric_key: key,
     style,
@@ -4651,6 +5631,12 @@ function ensureMetricExplorerControls() {
     y_zero: yZero,
     show_grid: showGrid,
     show_labels: showLabels,
+    show_error_bars: showErrorBars,
+    group_enabled: groupEnabled,
+    group_show_legend: groupShowLegend,
+    group_bar_gap: groupBarGap,
+    group_legends: groupLegends,
+    group_assignment: groupAssignment,
     ...typo,
     plot_width_px: plotWidth,
     plot_height_px: plotHeight,
@@ -4661,6 +5647,11 @@ function ensureMetricExplorerControls() {
   if (els.metricExplorerZeroY) els.metricExplorerZeroY.checked = yZero;
   if (els.metricExplorerShowGrid) els.metricExplorerShowGrid.checked = showGrid;
   if (els.metricExplorerShowLabels) els.metricExplorerShowLabels.checked = showLabels;
+  if (els.metricExplorerShowErrorBars) els.metricExplorerShowErrorBars.checked = showErrorBars;
+  if (els.metricExplorerGroupEnabled) els.metricExplorerGroupEnabled.checked = groupEnabled;
+  if (els.metricExplorerGroupShowLegend) els.metricExplorerGroupShowLegend.checked = groupShowLegend;
+  if (els.metricExplorerGroupBarGap) els.metricExplorerGroupBarGap.value = String(groupBarGap);
+  if (els.metricExplorerGroupBarGapValue) els.metricExplorerGroupBarGapValue.textContent = format(groupBarGap, 2);
   if (els.metricExplorerFontFamily) els.metricExplorerFontFamily.value = state.metricExplorer.current.font_family;
   if (els.metricExplorerUseGlobalFontSize) els.metricExplorerUseGlobalFontSize.checked = Boolean(state.metricExplorer.current.use_global_font_size);
   if (els.metricExplorerGlobalFontSize) els.metricExplorerGlobalFontSize.value = String(state.metricExplorer.current.global_font_size_px);
@@ -4670,6 +5661,9 @@ function ensureMetricExplorerControls() {
   if (els.metricExplorerTitleText) els.metricExplorerTitleText.value = state.metricExplorer.current.title_text ?? '';
   if (els.metricExplorerXAxisLabel) els.metricExplorerXAxisLabel.value = state.metricExplorer.current.x_axis_label ?? '';
   if (els.metricExplorerYAxisLabel) els.metricExplorerYAxisLabel.value = state.metricExplorer.current.y_axis_label ?? '';
+  renderMetricAxisLabelSuggestions();
+  ensureMetricExplorerGroupLegendState();
+  renderMetricExplorerGroupSeriesMap();
   syncMetricGlobalFontUi();
 }
 
@@ -4705,11 +5699,18 @@ function applyMetricExplorerPlotSize() {
 
 function metricExplorerCurrentSettings() {
   const cur = state.metricExplorer?.current || {};
+  ensureMetricExplorerGroupLegendState();
   return {
     sort: ['original', 'mean_desc', 'mean_asc'].includes(cur.sort) ? cur.sort : 'original',
     y_zero: cur.y_zero !== false,
     show_grid: cur.show_grid !== false,
     show_labels: Boolean(cur.show_labels),
+    show_error_bars: cur.show_error_bars !== false,
+    group_enabled: Boolean(cur.group_enabled),
+    group_show_legend: cur.group_show_legend !== false,
+    group_bar_gap: clampMetricGroupBarGap(cur.group_bar_gap, 0.12),
+    group_legends: normalizeMetricExplorerGroupLegends(cur.group_legends || []),
+    group_assignment: normalizeMetricExplorerGroupAssignment(cur.group_assignment || {}),
     ...normalizeMetricTypography(cur, cur.metric_key),
   };
 }
@@ -4748,58 +5749,214 @@ function getMetricExplorerSampleRows() {
 }
 
 function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) {
+  normalizeProjectGroups(state.project);
   const def = metricExplorerDef(metricKey);
   const cfg = {
     sort: ['original', 'mean_desc', 'mean_asc'].includes(settings.sort) ? settings.sort : 'original',
     y_zero: settings.y_zero !== false,
     show_grid: settings.show_grid !== false,
     show_labels: Boolean(settings.show_labels),
+    show_error_bars: settings.show_error_bars !== false,
+    group_enabled: Boolean(settings.group_enabled),
+    group_show_legend: settings.group_show_legend !== false,
+    group_bar_gap: clampMetricGroupBarGap(settings.group_bar_gap, 0.12),
+    group_legends: normalizeMetricExplorerGroupLegends(settings.group_legends || []),
+    group_assignment: normalizeMetricExplorerGroupAssignment(settings.group_assignment || {}),
   };
   const pts = getMetricExplorerRows(metricKey, cfg).map((p) => ({
     ...p,
     semTxt: Number.isFinite(optionalFiniteNumber(p.sem)) ? format(p.sem, 4) : 'n/a',
   }));
   if (!pts.length) return { hasData: false, data: [], layout: {} };
-
-  const x = pts.map((p) => p.sample);
-  const y = pts.map((p) => p.mean);
-  const colors = pts.map((p) => p.color || '#a9d0f5');
-  const lineColors = colors.map((c) => colorWithAdjustedLightness(c, -0.24));
-  const err = pts.map((p) => Number.isFinite(optionalFiniteNumber(p.sem)) ? Number(p.sem) : 0);
-  const hover = pts.map((p) => `Sample: ${p.sample}<br>Mean: ${format(p.mean, 6)} ${def.unit}<br>SEM: ${p.semTxt} ${def.unit}`);
-  const labels = pts.map((p) => format(p.mean, 4));
-
-  const traceCommon = {
-    x,
-    y,
-    customdata: hover,
-    hovertemplate: '%{customdata}<extra></extra>',
-    error_y: {
-      type: 'data',
-      array: err,
-      visible: true,
-      thickness: 1.2,
-      width: 4,
-      color: '#475569',
-    },
+  const buildUngrouped = () => {
+    const x = pts.map((p) => p.sample);
+    const y = pts.map((p) => p.mean);
+    const colors = pts.map((p) => p.color || '#a9d0f5');
+    const lineColors = colors.map((c) => colorWithAdjustedLightness(c, -0.24));
+    const err = pts.map((p) => Number.isFinite(optionalFiniteNumber(p.sem)) ? Number(p.sem) : 0);
+    const hover = pts.map((p) => `Sample: ${p.sample}<br>Mean: ${format(p.mean, 6)} ${def.unit}<br>SEM: ${p.semTxt} ${def.unit}`);
+    const labels = pts.map((p) => format(p.mean, 4));
+    const traceCommon = {
+      x,
+      y,
+      customdata: hover,
+      hovertemplate: '%{customdata}<extra></extra>',
+      error_y: {
+        type: 'data',
+        array: err,
+        visible: cfg.show_error_bars,
+        thickness: 1.2,
+        width: 4,
+        color: '#475569',
+      },
+    };
+    return style === 'bar'
+      ? [{
+          type: 'bar',
+          ...traceCommon,
+          marker: { color: colors, line: { color: lineColors, width: 0.8 } },
+          text: cfg.show_labels ? labels : undefined,
+          textposition: cfg.show_labels ? 'auto' : undefined,
+          showlegend: false,
+        }]
+      : [{
+          type: 'scatter',
+          mode: cfg.show_labels ? 'markers+text' : 'markers',
+          ...traceCommon,
+          marker: { color: colors, size: 10, line: { color: lineColors, width: 0.8 } },
+          text: cfg.show_labels ? labels : undefined,
+          textposition: cfg.show_labels ? 'top center' : undefined,
+          showlegend: false,
+        }];
   };
 
-  const data = style === 'bar'
-    ? [{
-        type: 'bar',
-        ...traceCommon,
-        marker: { color: colors, line: { color: lineColors, width: 0.8 } },
-        text: cfg.show_labels ? labels : undefined,
-        textposition: cfg.show_labels ? 'auto' : undefined,
-      }]
-    : [{
-        type: 'scatter',
-        mode: cfg.show_labels ? 'markers+text' : 'markers',
-        ...traceCommon,
-        marker: { color: colors, size: 10, line: { color: lineColors, width: 0.8 } },
-        text: cfg.show_labels ? labels : undefined,
-        textposition: cfg.show_labels ? 'top center' : undefined,
-      }];
+  const buildGrouped = () => {
+    const groups = Array.isArray(state.project?.groups) ? state.project.groups : [];
+    if (!groups.length) return { data: buildUngrouped(), grouped_ok: false, grouped_reason: 'No groups defined' };
+    const sampleNameToIds = new Map();
+    for (const s of (state.project?.samples || [])) {
+      const sid = String(s.id || '');
+      const sname = String(s.name || '').trim();
+      if (!sid) continue;
+      const keys = [sname, sname.toLowerCase(), sid].filter(Boolean);
+      for (const k of keys) {
+        if (!sampleNameToIds.has(k)) sampleNameToIds.set(k, []);
+        sampleNameToIds.get(k).push(sid);
+      }
+    }
+    const validGroups = groups
+      .map((g) => ({ ...g, _member_ids: resolveGroupSampleIds(state.project, g) }))
+      .filter((g) => Array.isArray(g._member_ids) && g._member_ids.length);
+    if (!validGroups.length) return { data: buildUngrouped(), grouped_ok: false, grouped_reason: 'Groups have no assigned samples' };
+    const groupOrder = validGroups.map((g) => String(g.name || g.id || 'Group'));
+    const legendItems = normalizeMetricExplorerGroupLegends(cfg.group_legends || []);
+    if (!legendItems.length) return { data: buildUngrouped(), grouped_ok: false, grouped_reason: 'No legend series defined' };
+    const legendById = new Map(legendItems.map((l) => [l.id, l]));
+    const entries = [];
+    let displayOrder = 0;
+    for (const p of pts) {
+      const keys = [String(p.sample || ''), String(p.sample || '').toLowerCase()];
+      const sidList = [];
+      for (const k of keys) {
+        for (const sid of (sampleNameToIds.get(k) || [])) {
+          if (!sidList.includes(sid)) sidList.push(sid);
+        }
+      }
+      if (!sidList.length) continue;
+      for (const sid of sidList) {
+        for (const g of validGroups) {
+          if (!(g._member_ids || []).includes(sid)) continue;
+          const assignedLegendId = String(cfg.group_assignment?.[sid] || '').trim();
+          if (!assignedLegendId || !legendById.has(assignedLegendId)) continue;
+          const legendId = assignedLegendId;
+          const gname = String(g.name || g.id || 'Group');
+          entries.push({
+            legend_id: legendId,
+            group_name: gname,
+            sample_name: String(p.sample || ''),
+            mean: Number(p.mean || 0),
+            sem: Number.isFinite(optionalFiniteNumber(p.sem)) ? Number(p.sem) : 0,
+            order: displayOrder,
+          });
+        }
+      }
+      displayOrder += 1;
+    }
+    if (!entries.length) return { data: buildUngrouped(), grouped_ok: false, grouped_reason: 'No samples matched grouped mapping' };
+    const seriesIds = legendItems.map((l) => l.id);
+    const data = [];
+    if (style === 'bar') {
+      const legendShown = new Set();
+      let maxBarsPerGroup = 1;
+      for (const gname of groupOrder) {
+        const count = entries.filter((e) => e.group_name === gname).length;
+        maxBarsPerGroup = Math.max(maxBarsPerGroup, count);
+      }
+      const widthFactor = clamp(1 - (cfg.group_bar_gap * 0.9), 0.18, 1.0);
+      const barWidth = clamp((0.86 / Math.max(1, maxBarsPerGroup)) * widthFactor, 0.05, 0.72);
+      for (const gname of groupOrder) {
+        const present = entries
+          .filter((e) => e.group_name === gname)
+          .sort((a, b) => a.order - b.order || a.sample_name.localeCompare(b.sample_name));
+        for (let idx = 0; idx < present.length; idx++) {
+          const item = present[idx];
+          const legend = legendById.get(item.legend_id) || { label: 'Legend', color: '#a9d0f5', pattern: '' };
+          const seriesName = String(legend.label || 'Legend').trim() || 'Legend';
+          data.push({
+            type: 'bar',
+            name: seriesName,
+            legendgroup: item.legend_id,
+            showlegend: cfg.group_show_legend && !legendShown.has(item.legend_id),
+            x: [gname],
+            y: [item.mean],
+            width: [barWidth],
+            customdata: [`${seriesName}<br>Sample: ${item.sample_name}<br>Group: ${gname}<br>Mean: ${format(item.mean, 6)} ${def.unit}<br>SEM: ${format(item.sem, 4)} ${def.unit}`],
+            hovertemplate: '%{customdata}<extra></extra>',
+            marker: {
+              color: normalizeHexColor(legend.color, '#a9d0f5'),
+              line: { color: colorWithAdjustedLightness(normalizeHexColor(legend.color, '#a9d0f5'), -0.24), width: 0.8 },
+              pattern: { shape: legend.pattern || '' },
+            },
+            error_y: { type: 'data', array: [item.sem], visible: cfg.show_error_bars, thickness: 1.2, width: 4, color: '#475569' },
+            text: cfg.show_labels ? [format(item.mean, 4)] : undefined,
+            textposition: cfg.show_labels ? 'auto' : undefined,
+            offsetgroup: `${gname}::${idx}`,
+            alignmentgroup: gname,
+          });
+          legendShown.add(item.legend_id);
+        }
+      }
+    } else {
+      for (const lid of seriesIds) {
+        const legend = legendById.get(lid) || { label: 'Legend', color: '#a9d0f5', pattern: '' };
+        const seriesName = String(legend.label || 'Legend').trim() || 'Legend';
+        const x = [];
+        const y = [];
+        const err = [];
+        const hover = [];
+        const labels = [];
+        const groupedEntries = entries
+          .filter((e) => e.legend_id === lid)
+          .sort((a, b) => {
+            const ga = groupOrder.indexOf(a.group_name);
+            const gb = groupOrder.indexOf(b.group_name);
+            return (ga - gb) || (a.order - b.order) || a.sample_name.localeCompare(b.sample_name);
+          });
+        for (const item of groupedEntries) {
+          x.push(item.group_name);
+          y.push(item.mean);
+          err.push(item.sem);
+          hover.push(`${seriesName}<br>Sample: ${item.sample_name}<br>Group: ${item.group_name}<br>Mean: ${format(item.mean, 6)} ${def.unit}<br>SEM: ${format(item.sem, 4)} ${def.unit}`);
+          labels.push(format(item.mean, 4));
+        }
+        if (!x.length) continue;
+        data.push({
+          type: 'scatter',
+          mode: cfg.show_labels ? 'markers+text' : 'markers',
+          name: seriesName,
+          x,
+          y,
+          customdata: hover,
+          hovertemplate: '%{customdata}<extra></extra>',
+          marker: {
+            color: normalizeHexColor(legend.color, '#a9d0f5'),
+            size: 10,
+            symbol: legend.pattern ? 'diamond' : 'circle',
+            line: { color: colorWithAdjustedLightness(normalizeHexColor(legend.color, '#a9d0f5'), -0.24), width: 0.8 },
+          },
+          error_y: { type: 'data', array: err, visible: cfg.show_error_bars, thickness: 1.2, width: 4, color: '#475569' },
+          text: cfg.show_labels ? labels : undefined,
+          textposition: cfg.show_labels ? 'top center' : undefined,
+          showlegend: cfg.group_show_legend,
+        });
+      }
+    }
+    if (!data.length) return { data: buildUngrouped(), grouped_ok: false, grouped_reason: 'No points matched legend assignment' };
+    return { data, grouped_ok: true, grouped_reason: '' };
+  };
+
+  const groupedResult = cfg.group_enabled ? buildGrouped() : { data: buildUngrouped(), grouped_ok: false, grouped_reason: '' };
+  const data = groupedResult.data;
 
   const chartLabel = style === 'bar' ? 'Bar + SEM' : 'Dot + SEM';
   const typo = normalizeMetricTypography(settings, metricKey);
@@ -4811,7 +5968,10 @@ function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) 
   const resolvedTitle = title === null || title === undefined
     ? resolvePlotText(typo.title_text, `${def.label} (${def.unit})`)
     : title;
-  const resolvedXLabel = resolvePlotText(typo.x_axis_label, 'Sample');
+  const defaultXLabel = cfg.group_enabled ? 'Group' : 'Sample';
+  const rawXLabel = String(typo.x_axis_label ?? '');
+  const effectiveXLabel = (cfg.group_enabled && rawXLabel.trim().toLowerCase() === 'sample') ? 'Group' : typo.x_axis_label;
+  const resolvedXLabel = resolvePlotText(effectiveXLabel, defaultXLabel);
   const resolvedYLabel = resolvePlotText(typo.y_axis_label, `${def.label} (${def.unit})`);
   const layout = {
     font: { family: typo.font_family },
@@ -4839,7 +5999,9 @@ function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) 
       zeroline: false,
       rangemode: cfg.y_zero ? 'tozero' : 'normal',
     },
-    showlegend: false,
+    showlegend: cfg.group_enabled ? cfg.group_show_legend : false,
+    barmode: (cfg.group_enabled && style === 'bar') ? 'group' : undefined,
+    bargroupgap: (cfg.group_enabled && style === 'bar') ? cfg.group_bar_gap : undefined,
     annotations: [{
       xref: 'paper',
       yref: 'paper',
@@ -4848,7 +6010,9 @@ function buildMetricExplorerSpec(metricKey, style, settings = {}, title = null) 
       xanchor: 'left',
       yanchor: 'bottom',
       showarrow: false,
-      text: chartLabel,
+      text: cfg.group_enabled && !groupedResult.grouped_ok
+        ? `${chartLabel} · Grouping on (${groupedResult.grouped_reason || 'no grouped data'})`
+        : chartLabel,
       font: { family: typo.font_family, size: Math.max(10, typo.tick_font_size_px - 1), color: '#6b7280' },
     }],
   };
@@ -4955,6 +6119,19 @@ function drawPinnedMetricPlot(pin) {
     margin: { l: 38, r: 8, t: 8, b: 28 },
     height: h,
     annotations: [],
+    showlegend: Boolean(spec.layout?.showlegend),
+    legend: {
+      x: 0.99,
+      y: 0.99,
+      xanchor: 'right',
+      yanchor: 'top',
+      orientation: 'v',
+      font: { size: 8 },
+      itemsizing: 'constant',
+      bgcolor: 'rgba(255,255,255,0.45)',
+      borderwidth: 0,
+      tracegroupgap: 2,
+    },
     xaxis: {
       ...(spec.layout.xaxis || {}),
       title: '',
@@ -5028,6 +6205,12 @@ function loadPinnedMetricToExplorer(pinId) {
     y_zero: pin.settings?.y_zero !== false,
     show_grid: pin.settings?.show_grid !== false,
     show_labels: Boolean(pin.settings?.show_labels),
+    show_error_bars: pin.settings?.show_error_bars !== false,
+    group_enabled: Boolean(pin.settings?.group_enabled),
+    group_show_legend: pin.settings?.group_show_legend !== false,
+    group_bar_gap: clampMetricGroupBarGap(pin.settings?.group_bar_gap, 0.12),
+    group_legends: normalizeMetricExplorerGroupLegends(pin.settings?.group_legends || []),
+    group_assignment: normalizeMetricExplorerGroupAssignment(pin.settings?.group_assignment || {}),
     ...typo,
     plot_width_px: state.metricExplorer.current?.plot_width_px || 760,
     plot_height_px: state.metricExplorer.current?.plot_height_px || 570,
@@ -6154,8 +7337,23 @@ async function importProjectFromFile(file) {
     ui: { ...(defaultProject().ui), ...(proj.ui || {}) },
     project_meta: normalizeProjectMeta(proj.project_meta || defaultProject().project_meta),
     samples: proj.samples,
+    groups: Array.isArray(proj.groups) ? proj.groups : [],
   };
+  normalizeProjectGroups(state.project);
+  state.groupEditor.selected_group_id = null;
+  state.groupEditor.search = '';
+  state.groupEditor.selected_available_ids = [];
+  state.groupEditor.selected_in_group_ids = [];
+  state.groupEditor.anchor_available_id = null;
+  state.groupEditor.anchor_in_group_id = null;
+  clearPendingGroupRowClick();
+  state.vizGroupFilter.open = false;
+  state.vizGroupFilter.query = '';
+  state.vizGroupFilter.selected_group_ids = [];
+  state.vizGroupFilter.known_group_ids = [];
+  state.vizGroupFilter.initialized = false;
   state.metricExplorer = normalizeMetricExplorerState(proj?.ui?.metric_explorer || state.metricExplorer);
+  state.summaryAutoPrecomputeQueued = false;
   state.projectDirty = false;
   state.projectLastChangedAt = null;
   if (!state.projectSaveName) state.projectSaveName = 'ld_project.stt';
@@ -6167,6 +7365,7 @@ async function importProjectFromFile(file) {
 
   writeConfigForm(state.project);
   renderSamplesList();
+  updateNewGroupNameSuggestion(true);
   refreshVizSelectors();
   applyDomainThresholdForSelection();
   setPrecomputeInfo(`Imported project with ${state.project.samples.length} sample(s).`);
@@ -6199,6 +7398,7 @@ async function addReplicaFilesToSample(sampleId, files) {
       cache: normalizeReplicaCache(null),
     });
   }
+  state.summaryAutoPrecomputeQueued = false;
   markProjectChanged('replica upload');
 
   renderSamplesList();
@@ -6243,6 +7443,7 @@ async function createNewProjectWorkflow() {
   state.replicaDataCache = {};
   state.precomputeQueue = [];
   state.precomputeQueueRunning = false;
+  state.summaryAutoPrecomputeQueued = false;
   state.curveWarmupRunning = false;
   state.projectSaveHandle = null;
   state.projectSaveName = 'ld_project.stt';
@@ -6268,9 +7469,10 @@ async function createNewProjectWorkflow() {
 
   writeConfigForm(state.project);
   updateNewSampleNameSuggestion(true);
+  updateNewGroupNameSuggestion(true);
   renderSamplesList();
   refreshVizSelectors();
-  clearVisualizationState('Select a sample/replica first.');
+  clearVisualizationState('');
   renderSummaryFromCache();
   renderPinnedMetricPlots();
   updateMetricPinButtonsUi();
@@ -6339,6 +7541,20 @@ function setupEvents() {
     renderSamplesList();
     refreshVizSelectors();
   });
+  els.addGroupBtn?.addEventListener('click', () => {
+    const name = (els.newGroupName?.value || '').trim() || nextGroupDefaultName();
+    if (!state.project) state.project = defaultProject();
+    normalizeProjectGroups(state.project);
+    const group = { id: uid('grp'), name, sample_ids: [] };
+    state.project.groups.push(group);
+    state.groupEditor.selected_group_id = group.id;
+    markProjectChanged('group add');
+    updateNewGroupNameSuggestion(true);
+    renderGroupsPanel();
+    refreshVizSelectors();
+    renderProjectInfo();
+    queueProjectAutosave('group add');
+  });
   els.expandAllSamplesBtn?.addEventListener('click', () => setAllSamplesCollapsed(false));
   els.collapseAllSamplesBtn?.addEventListener('click', () => setAllSamplesCollapsed(true));
   els.newSampleName.addEventListener('focus', () => {
@@ -6354,6 +7570,21 @@ function setupEvents() {
   els.newSampleName.addEventListener('blur', () => {
     if (!(els.newSampleName.value || '').trim()) {
       updateNewSampleNameSuggestion(true);
+    }
+  });
+  els.newGroupName?.addEventListener('focus', () => {
+    const isAutofill = els.newGroupName.dataset.autofill === '1';
+    if (isAutofill) {
+      els.newGroupName.value = '';
+      els.newGroupName.dataset.autofill = '0';
+    }
+  });
+  els.newGroupName?.addEventListener('input', () => {
+    els.newGroupName.dataset.autofill = '0';
+  });
+  els.newGroupName?.addEventListener('blur', () => {
+    if (!(els.newGroupName.value || '').trim()) {
+      updateNewGroupNameSuggestion(true);
     }
   });
   els.precomputeAllBtn.addEventListener('click', () => {
@@ -6514,6 +7745,7 @@ function setupEvents() {
         if (key.startsWith(`${sid}::`)) delete state.replicaDataCache[key];
       }
       state.project.samples = state.project.samples.filter((s) => s.id !== sid);
+      normalizeProjectGroups(state.project);
       markProjectChanged('sample remove');
       renderSamplesList();
       refreshVizSelectors();
@@ -6534,6 +7766,253 @@ function setupEvents() {
       renderSamplesList();
       refreshVizSelectors();
     }
+  });
+  els.groupsList?.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    normalizeProjectGroups(state.project);
+    const gid = String(target.dataset.gid || '');
+
+    if (target.classList.contains('groupSelectBtn')) {
+      clearPendingGroupRowClick();
+      if (!gid) return;
+      state.groupEditor.selected_group_id = gid;
+      state.groupEditor.selected_available_ids = [];
+      state.groupEditor.selected_in_group_ids = [];
+      state.groupEditor.anchor_available_id = null;
+      state.groupEditor.anchor_in_group_id = null;
+      renderGroupsPanel();
+      return;
+    }
+
+    const sampleRow = target.closest('.groupSampleRowSelectable');
+    if (sampleRow instanceof HTMLElement && !target.closest('.addToGroupBtn') && !target.closest('.removeFromGroupBtn')) {
+      evt.preventDefault();
+      const list = String(sampleRow.dataset.list || '');
+      const sid = String(sampleRow.dataset.sid || '');
+      if (!sid || (list !== 'available' && list !== 'in_group')) return;
+      const shiftKey = Boolean(evt.shiftKey);
+      const toggleKey = Boolean(evt.ctrlKey || evt.metaKey);
+      applyGroupRowSelection(list, sid, shiftKey, toggleKey);
+      return;
+    }
+
+    if (target.classList.contains('addToGroupBtn')) {
+      clearPendingGroupRowClick();
+      const sid = String(target.dataset.sid || '');
+      if (!gid || !sid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      if (!group.sample_ids.includes(sid)) group.sample_ids.push(sid);
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (target.classList.contains('removeFromGroupBtn')) {
+      clearPendingGroupRowClick();
+      const sid = String(target.dataset.sid || '');
+      if (!gid || !sid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      group.sample_ids = group.sample_ids.filter((id) => id !== sid);
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (target.classList.contains('groupBulkAddBtn')) {
+      clearPendingGroupRowClick();
+      if (!gid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      const matchesQuery = makeWildcardMatcher(state.groupEditor?.search || '');
+      let changed = false;
+      for (const s of (state.project.samples || [])) {
+        const match = matchesQuery(s.name || s.id);
+        if (!match) continue;
+        if (!group.sample_ids.includes(s.id)) {
+          group.sample_ids.push(s.id);
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (target.classList.contains('groupBulkRemoveBtn')) {
+      clearPendingGroupRowClick();
+      if (!gid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      const matchesQuery = makeWildcardMatcher(state.groupEditor?.search || '');
+      const sampleById = new Map((state.project.samples || []).map((s) => [s.id, s]));
+      const nextIds = [];
+      for (const sid of group.sample_ids || []) {
+        const s = sampleById.get(sid);
+        const match = s && matchesQuery(s.name || s.id);
+        if (!match) nextIds.push(sid);
+      }
+      if (nextIds.length === group.sample_ids.length) return;
+      group.sample_ids = nextIds;
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (target.classList.contains('groupBatchAddSelectedBtn')) {
+      clearPendingGroupRowClick();
+      if (!gid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      const ids = Array.isArray(state.groupEditor.selected_available_ids) ? state.groupEditor.selected_available_ids : [];
+      let changed = false;
+      for (const sid of ids) {
+        if (!group.sample_ids.includes(sid)) {
+          group.sample_ids.push(sid);
+          changed = true;
+        }
+      }
+      state.groupEditor.selected_available_ids = [];
+      state.groupEditor.anchor_available_id = null;
+      if (!changed) {
+        renderGroupsPanel();
+        refreshVizSelectors();
+        return;
+      }
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (target.classList.contains('groupBatchRemoveSelectedBtn')) {
+      clearPendingGroupRowClick();
+      if (!gid) return;
+      const group = (state.project.groups || []).find((g) => g.id === gid);
+      if (!group) return;
+      const removeIds = new Set(Array.isArray(state.groupEditor.selected_in_group_ids) ? state.groupEditor.selected_in_group_ids : []);
+      if (!removeIds.size) {
+        renderGroupsPanel();
+        refreshVizSelectors();
+        return;
+      }
+      const nextIds = (group.sample_ids || []).filter((sid) => !removeIds.has(sid));
+      const changed = nextIds.length !== (group.sample_ids || []).length;
+      group.sample_ids = nextIds;
+      state.groupEditor.selected_in_group_ids = [];
+      state.groupEditor.anchor_in_group_id = null;
+      if (!changed) {
+        renderGroupsPanel();
+        refreshVizSelectors();
+        return;
+      }
+      markProjectChanged('group membership');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group membership');
+      return;
+    }
+
+    if (!gid) return;
+    const group = (state.project.groups || []).find((g) => g.id === gid);
+    if (!group) return;
+
+    if (target.classList.contains('editGroupNameBtn')) {
+      clearPendingGroupRowClick();
+      const isEditing = String(state.groupEditor.editing_group_id || '') === gid;
+      if (isEditing) {
+        commitGroupRename(gid, state.groupEditor.editing_group_name, { cancelIfEmpty: true });
+        return;
+      }
+      state.groupEditor.editing_group_id = gid;
+      state.groupEditor.editing_group_name = String(group.name || '');
+      renderGroupsPanel();
+      return;
+    }
+    if (target.classList.contains('removeGroupBtn')) {
+      clearPendingGroupRowClick();
+      state.project.groups = (state.project.groups || []).filter((g) => g.id !== gid);
+      markProjectChanged('group remove');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      renderProjectInfo();
+      queueProjectAutosave('group remove');
+    }
+  });
+  els.groupsList?.addEventListener('dblclick', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    const sampleRow = target.closest('.groupSampleRowSelectable');
+    if (!(sampleRow instanceof HTMLElement)) return;
+    evt.preventDefault();
+    normalizeProjectGroups(state.project);
+    const gid = String(state.groupEditor?.selected_group_id || '');
+    const sid = String(sampleRow.dataset.sid || '');
+    const list = String(sampleRow.dataset.list || '');
+    if (!gid || !sid || (list !== 'available' && list !== 'in_group')) return;
+    moveSampleBetweenGroupLists(gid, list, sid);
+  });
+  els.groupsList?.addEventListener('input', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.classList.contains('groupSearchInput')) {
+      state.groupEditor.search = String(target.value || '');
+      renderGroupsPanel();
+      refreshVizSelectors();
+      return;
+    }
+    if (target.classList.contains('groupNameEditInput')) {
+      const gid = String(target.dataset.gid || '');
+      if (!gid) return;
+      state.groupEditor.editing_group_id = gid;
+      state.groupEditor.editing_group_name = String(target.value || '');
+    }
+  });
+  els.groupsList?.addEventListener('keydown', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.classList.contains('groupNameEditInput')) return;
+    const gid = String(target.dataset.gid || '');
+    if (!gid) return;
+    if (evt.key === 'Enter') {
+      evt.preventDefault();
+      commitGroupRename(gid, target.value, { cancelIfEmpty: true });
+      return;
+    }
+    if (evt.key === 'Escape') {
+      evt.preventDefault();
+      state.groupEditor.editing_group_id = null;
+      state.groupEditor.editing_group_name = '';
+      renderGroupsPanel();
+    }
+  });
+  els.groupsList?.addEventListener('focusout', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.classList.contains('groupNameEditInput')) return;
+    const gid = String(target.dataset.gid || '');
+    if (!gid) return;
+    const nextFocus = evt.relatedTarget;
+    if (nextFocus instanceof HTMLElement && nextFocus.closest('.groupRow') === target.closest('.groupRow')) return;
+    commitGroupRename(gid, target.value, { cancelIfEmpty: true });
   });
 
   els.samplesList.addEventListener('keydown', (evt) => {
@@ -6787,6 +8266,144 @@ function setupEvents() {
     drawMetricExplorerPlot();
     queueProjectAutosave('metric explorer');
   });
+  els.metricExplorerShowErrorBars?.addEventListener('change', () => {
+    state.metricExplorer.current.show_error_bars = Boolean(els.metricExplorerShowErrorBars.checked);
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer');
+  });
+  els.metricExplorerGroupEnabled?.addEventListener('change', () => {
+    state.metricExplorer.current.group_enabled = Boolean(els.metricExplorerGroupEnabled.checked);
+    renderMetricExplorerGroupSeriesMap();
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
+  els.metricExplorerGroupShowLegend?.addEventListener('change', () => {
+    state.metricExplorer.current.group_show_legend = Boolean(els.metricExplorerGroupShowLegend.checked);
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
+  els.metricExplorerGroupBarGap?.addEventListener('input', () => {
+    const v = clampMetricGroupBarGap(els.metricExplorerGroupBarGap.value, 0.12);
+    state.metricExplorer.current.group_bar_gap = v;
+    if (els.metricExplorerGroupBarGapValue) els.metricExplorerGroupBarGapValue.textContent = format(v, 2);
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
+  els.metricExplorerGroupSeriesMap?.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.id !== 'openGroupLegendEditorBtn') return;
+    setGroupLegendEditorOpen(true);
+  });
+  els.groupLegendEditorCloseBtn?.addEventListener('click', () => {
+    setGroupLegendEditorOpen(false);
+  });
+  els.groupLegendEditorModal?.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target === els.groupLegendEditorModal) {
+      setGroupLegendEditorOpen(false);
+    }
+  });
+  els.groupLegendAddBtn?.addEventListener('click', () => {
+    ensureMetricExplorerGroupLegendState();
+    const nextLabel = String(els.groupLegendNewLabel?.value || '').trim() || `Label ${(state.metricExplorer.current.group_legends || []).length + 1}`;
+    const usedColors = new Set((state.metricExplorer.current.group_legends || []).map((l) => normalizeHexColor(l.color, '#a9d0f5')));
+    const color = generateDistinctPastelColor(Array.from(usedColors), (state.metricExplorer.current.group_legends || []).length + 3);
+    const id = uid('mleg');
+    state.metricExplorer.current.group_legends.push({ id, label: nextLabel, color, pattern: '' });
+    state.groupLegendEditor.selected_label_id = id;
+    if (els.groupLegendNewLabel) els.groupLegendNewLabel.value = '';
+    renderMetricExplorerGroupSeriesMap();
+    renderGroupLegendEditor();
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
+  els.groupLegendSeriesList?.addEventListener('input', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    ensureMetricExplorerGroupLegendState();
+    const lid = String(target.getAttribute('data-lid') || '').trim();
+    if (!lid) return;
+    const legend = (state.metricExplorer.current.group_legends || []).find((l) => l.id === lid);
+    if (!legend) return;
+    if (target.classList.contains('groupLegendColorInput') && target instanceof HTMLInputElement) {
+      legend.color = normalizeHexColor(target.value, legend.color || '#a9d0f5');
+    } else if (target.classList.contains('groupLegendPatternInput') && target instanceof HTMLSelectElement) {
+      const val = String(target.value || '');
+      legend.pattern = METRIC_GROUP_PATTERN_OPTIONS.some((x) => x.value === val) ? val : '';
+    } else {
+      return;
+    }
+    renderMetricExplorerGroupSeriesMap();
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
+  els.groupLegendSeriesList?.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    ensureMetricExplorerGroupLegendState();
+    const lid = String(target.getAttribute('data-lid') || target.closest('[data-lid]')?.getAttribute('data-lid') || '').trim();
+    if (!lid) return;
+    if (target.classList.contains('legendSelectBtn')) {
+      state.groupLegendEditor.selected_label_id = lid;
+      renderGroupLegendEditor();
+      return;
+    }
+    if (target.classList.contains('editLegendBtn')) {
+      const legend = (state.metricExplorer.current.group_legends || []).find((l) => l.id === lid);
+      if (!legend) return;
+      const next = prompt('Rename label', legend.label || '');
+      if (next === null) return;
+      const v = String(next || '').trim();
+      if (!v) return;
+      legend.label = v;
+      renderMetricExplorerGroupSeriesMap();
+      renderGroupLegendEditor();
+      drawMetricExplorerPlot();
+      queueProjectAutosave('metric explorer groups');
+      return;
+    }
+    if (target.classList.contains('groupLegendDeleteBtn')) {
+      if ((state.metricExplorer.current.group_legends || []).length <= 1) return;
+      state.metricExplorer.current.group_legends = (state.metricExplorer.current.group_legends || []).filter((l) => l.id !== lid);
+      const nextAssign = {};
+      for (const [k, v] of Object.entries(state.metricExplorer.current.group_assignment || {})) {
+        if (v === lid) continue;
+        nextAssign[k] = v;
+      }
+      state.metricExplorer.current.group_assignment = nextAssign;
+      ensureMetricExplorerGroupLegendState();
+      renderMetricExplorerGroupSeriesMap();
+      renderGroupLegendEditor();
+      drawMetricExplorerPlot();
+      queueProjectAutosave('metric explorer groups');
+    }
+  });
+  els.groupLegendAssignmentList?.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLElement)) return;
+    const sid = String(target.getAttribute('data-sid') || '').trim();
+    if (!sid) return;
+    ensureMetricExplorerGroupLegendState();
+    const selectedLabelId = String(state.groupLegendEditor?.selected_label_id || state.metricExplorer.current.group_legends?.[0]?.id || '').trim();
+    if (target.classList.contains('legendAssignBtn')) {
+      if (!selectedLabelId) return;
+      const existing = String(state.metricExplorer.current.group_assignment[sid] || '').trim();
+      if (existing && existing !== selectedLabelId) return;
+      state.metricExplorer.current.group_assignment[sid] = selectedLabelId;
+    } else if (target.classList.contains('legendUnassignBtn')) {
+      const curL = String(state.metricExplorer.current.group_assignment[sid] || '').trim();
+      if (curL === selectedLabelId) delete state.metricExplorer.current.group_assignment[sid];
+      else return;
+    } else {
+      return;
+    }
+    renderMetricExplorerGroupSeriesMap();
+    renderGroupLegendEditor();
+    drawMetricExplorerPlot();
+    queueProjectAutosave('metric explorer groups');
+  });
   els.metricExplorerDownloadSvgBtn?.addEventListener('click', () => {
     downloadMetricExplorerSvg();
   });
@@ -7016,7 +8633,11 @@ function setupEvents() {
     closeSampleColorPicker();
   });
   window.addEventListener('keydown', (evt) => {
-    if (evt.key === 'Escape' && state.sampleColorPicker.open) closeSampleColorPicker();
+    if (evt.key !== 'Escape') return;
+    if (state.sampleColorPicker.open) closeSampleColorPicker();
+    if (els.groupLegendEditorModal && !els.groupLegendEditorModal.classList.contains('hidden')) {
+      setGroupLegendEditorOpen(false);
+    }
   });
   window.addEventListener('mousedown', (evt) => {
     if (!state.sampleColorPicker.open) return;
@@ -7035,6 +8656,53 @@ function setupEvents() {
   els.vizReplicaSelect.addEventListener('change', () => {
     applyDomainThresholdForSelection();
     maybeAutoLoadSelectedReplica();
+  });
+
+  els.vizGroupFilterBtn?.addEventListener('click', (evt) => {
+    evt.preventDefault();
+    state.vizGroupFilter.open = !state.vizGroupFilter.open;
+    renderVizGroupFilterUI();
+    if (state.vizGroupFilter.open) {
+      setTimeout(() => {
+        els.vizGroupFilterSearch?.focus();
+      }, 0);
+    }
+  });
+  els.vizGroupFilterSearch?.addEventListener('input', () => {
+    state.vizGroupFilter.query = String(els.vizGroupFilterSearch.value || '');
+    renderVizGroupFilterUI();
+  });
+  els.vizGroupFilterToggleAllBtn?.addEventListener('click', (evt) => {
+    evt.preventDefault();
+    const { groups, allSelected } = selectedVizGroupSet();
+    state.vizGroupFilter.selected_group_ids = allSelected ? [] : groups.map((g) => g.id);
+    refreshVizSelectors();
+    refreshReplicaSelector();
+    applyDomainThresholdForSelection();
+    maybeAutoLoadSelectedReplica();
+  });
+  els.vizGroupFilterOptions?.addEventListener('change', (evt) => {
+    const target = evt.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.classList.contains('vizGroupFilterOption')) return;
+    const gid = String(target.dataset.gid || '');
+    if (!gid) return;
+    const selected = new Set(Array.isArray(state.vizGroupFilter.selected_group_ids) ? state.vizGroupFilter.selected_group_ids : []);
+    if (target.checked) selected.add(gid);
+    else selected.delete(gid);
+    state.vizGroupFilter.selected_group_ids = Array.from(selected);
+    refreshVizSelectors();
+    refreshReplicaSelector();
+    applyDomainThresholdForSelection();
+    maybeAutoLoadSelectedReplica();
+  });
+  window.addEventListener('mousedown', (evt) => {
+    const t = evt.target;
+    if (!state.vizGroupFilter.open) return;
+    if (!(t instanceof HTMLElement)) return;
+    if (t.closest('#vizGroupFilter')) return;
+    state.vizGroupFilter.open = false;
+    renderVizGroupFilterUI();
   });
 
   els.domainThreshold.addEventListener('input', scheduleDomainDetect);
@@ -7261,19 +8929,42 @@ function openFontSizeCombo(combo) {
   if (menu instanceof HTMLElement) menu.hidden = false;
 }
 
+function populateFontSizeComboMenu(combo) {
+  if (!(combo instanceof HTMLElement)) return;
+  const menu = combo.querySelector('.fontSizeComboMenu');
+  if (!(menu instanceof HTMLElement)) return;
+  let values = [];
+  const rawJson = String(combo.dataset.comboValuesJson || '').trim();
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) values = parsed.map((v) => String(v || '').trim()).filter(Boolean);
+    } catch (_) {
+      values = [];
+    }
+  }
+  if (!values.length) values = COMMON_FONT_SIZES_PX.map((n) => String(n));
+  const highlightValue = String(combo.dataset.comboHighlightValue || '').trim();
+  const highlightLabel = String(combo.dataset.comboHighlightLabel || '').trim();
+  menu.innerHTML = values
+    .map((value) => {
+      const isHighlighted = highlightValue && value === highlightValue;
+      const shown = isHighlighted && highlightLabel ? `${value} (${highlightLabel})` : value;
+      return `<button type="button" class="fontSizeComboOption ${isHighlighted ? 'fontSizeComboOptionHighlighted' : ''}" data-value="${escapeHtml(value)}">${escapeHtml(shown)}</button>`;
+    })
+    .join('');
+}
+
 function setupFontSizeCombos() {
   document.querySelectorAll('.fontSizeCombo').forEach((combo) => {
     if (!(combo instanceof HTMLElement)) return;
-    if (combo.dataset.comboReady === '1') return;
-    combo.dataset.comboReady = '1';
     const input = combo.querySelector('input');
     const toggle = combo.querySelector('.fontSizeComboToggle');
     const menu = combo.querySelector('.fontSizeComboMenu');
     if (!(input instanceof HTMLInputElement) || !(toggle instanceof HTMLButtonElement) || !(menu instanceof HTMLElement)) return;
-
-    menu.innerHTML = COMMON_FONT_SIZES_PX
-      .map((size) => `<button type="button" class="fontSizeComboOption" data-size="${size}">${size}</button>`)
-      .join('');
+    populateFontSizeComboMenu(combo);
+    if (combo.dataset.comboReady === '1') return;
+    combo.dataset.comboReady = '1';
 
     const open = () => openFontSizeCombo(combo);
     const close = () => {
@@ -7301,7 +8992,7 @@ function setupFontSizeCombos() {
     menu.addEventListener('click', (evt) => {
       const btn = evt.target.closest('.fontSizeComboOption');
       if (!(btn instanceof HTMLElement)) return;
-      const value = String(btn.dataset.size || '').trim();
+      const value = String(btn.dataset.value || btn.dataset.size || '').trim();
       if (!value) return;
       input.value = value;
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -7326,6 +9017,18 @@ function init() {
     els.appSidebarToggle.setAttribute('title', collapsed ? 'Expand app menu' : 'Collapse app menu');
   }
   state.project = defaultProject();
+  state.groupEditor.selected_group_id = null;
+  state.groupEditor.search = '';
+  state.groupEditor.selected_available_ids = [];
+  state.groupEditor.selected_in_group_ids = [];
+  state.groupEditor.anchor_available_id = null;
+  state.groupEditor.anchor_in_group_id = null;
+  clearPendingGroupRowClick();
+  state.vizGroupFilter.open = false;
+  state.vizGroupFilter.query = '';
+  state.vizGroupFilter.selected_group_ids = [];
+  state.vizGroupFilter.known_group_ids = [];
+  state.vizGroupFilter.initialized = false;
   state.projectSaveHandle = null;
   state.projectSaveName = 'ld_project.stt';
   state.projectSaveDir = '';
@@ -7335,6 +9038,7 @@ function init() {
   writeConfigForm(state.project);
   renderSamplesList();
   updateNewSampleNameSuggestion(true);
+  updateNewGroupNameSuggestion(true);
   refreshVizSelectors();
   renderSummaryFromCache();
   maybeAutoLoadSelectedReplica();

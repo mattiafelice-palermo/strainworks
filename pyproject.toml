@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strainworks"
+version = "0.1.0"
+description = "Interactive web UI for load-displacement analysis."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110,<1",
+  "uvicorn>=0.29,<1",
+  "numpy>=1.26,<3",
+  "pydantic>=2.6,<3",
+]
+
+[project.scripts]
+strainworks-web = "run_web:main"
+
+[tool.setuptools.packages.find]
+include = ["ldanalyzer*", "webui*"]

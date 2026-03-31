@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LD Multi-Sample Analyzer</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260331-49" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260331-71" />
   </head>
   <body>
     <div class="appShell sidebarCollapsed">
@@ -96,36 +96,62 @@
           </div>
         </details>
 
-        <div class="panel">
-          <h2>Samples & Replicas</h2>
-          <div class="row">
-            <input id="newSampleName" type="text" placeholder="Sample name (e.g. Gel_A_5%)" />
-            <button id="addSampleBtn">Add Sample</button>
-            <button id="expandAllSamplesBtn" type="button">Expand All</button>
-            <button id="collapseAllSamplesBtn" type="button">Collapse All</button>
-            <button id="precomputeAllBtn">Precompute All</button>
+        <div class="sampleMgmtLayout">
+          <div class="panel sampleMgmtMainPanel">
+            <h2>Samples & Replicas</h2>
+            <div class="row">
+              <input id="newSampleName" type="text" placeholder="Sample name (e.g. Gel_A_5%)" />
+              <button id="addSampleBtn">Add Sample</button>
+              <button id="expandAllSamplesBtn" type="button">Expand All</button>
+              <button id="collapseAllSamplesBtn" type="button">Collapse All</button>
+              <button id="precomputeAllBtn">Precompute All</button>
+            </div>
+            <div class="row compact wrap">
+              <label><input id="autoPrecomputeOnUpload" type="checkbox" checked /> Auto-precompute on upload</label>
+              <label><input id="includeHeatmapInExport" type="checkbox" checked /> Include heatmap grids in project export</label>
+              <span id="precomputeInfo" class="muted"></span>
+            </div>
+            <div id="samplesList" class="samplesList"></div>
           </div>
-          <div class="row compact wrap">
-            <label><input id="autoPrecomputeOnUpload" type="checkbox" checked /> Auto-precompute on upload</label>
-            <label><input id="includeHeatmapInExport" type="checkbox" checked /> Include heatmap grids in project export</label>
-            <span id="precomputeInfo" class="muted"></span>
+
+          <div class="panel sampleMgmtGroupsPanel">
+            <h2>Groups</h2>
+            <div class="row">
+              <input id="newGroupName" type="text" placeholder="Group name (e.g. 2h)" />
+              <button id="addGroupBtn" type="button">Add Group</button>
+            </div>
+            <div class="muted">
+              A sample can belong to multiple groups.
+            </div>
+            <div id="groupsList" class="groupsList"></div>
           </div>
-          <div id="samplesList" class="samplesList"></div>
         </div>
       </section>
 
       <section id="vizTab" class="tabPane">
         <div class="vizLayout">
           <div class="panel vizControlsPanel">
-            <div class="row wrap">
+            <div class="row wrap vizSelectRow">
+              <label>Group filter
+                <div id="vizGroupFilter" class="groupFilter">
+                  <button id="vizGroupFilterBtn" class="groupFilterBtn" type="button" aria-haspopup="true" aria-expanded="false">All groups</button>
+                  <div id="vizGroupFilterDropdown" class="groupFilterDropdown hidden">
+                    <div class="groupFilterTop">
+                      <input id="vizGroupFilterSearch" type="text" placeholder="Filter groups..." />
+                      <button id="vizGroupFilterToggleAllBtn" type="button" class="topbarActionBtn">Deselect all</button>
+                    </div>
+                    <div id="vizGroupFilterOptions" class="groupFilterOptions"></div>
+                  </div>
+                </div>
+              </label>
               <label>Sample
                 <select id="vizSampleSelect"></select>
               </label>
               <label>Replica
                 <select id="vizReplicaSelect"></select>
               </label>
-              <span id="vizInfo" class="muted"></span>
             </div>
+            <div id="vizInfo" class="muted vizInfoLine"></div>
 
             <div class="row wrap">
               <label style="flex:1;">Domain score threshold
@@ -283,7 +309,7 @@
 
           <h3 class="sectionTitle">Metric Explorer (Sample Aggregates)</h3>
           <div class="metricExplorerPanel">
-            <div class="row compact wrap">
+            <div class="row compact wrap metricExplorerToolbar">
               <label>Metric
                 <select id="metricExplorerMetric"></select>
               </label>
@@ -306,6 +332,7 @@
                 <h4>Plot settings</h4>
                 <div class="settingsTabs" data-settings-tabs="metricExplorer">
                   <button type="button" class="settingsTabBtn active" data-settings-pane="display">Display</button>
+                  <button type="button" class="settingsTabBtn" data-settings-pane="groups">Groups</button>
                   <button type="button" class="settingsTabBtn" data-settings-pane="typography">Typography</button>
                 </div>
                 <div class="settingsTabPane active" data-settings-content="metricExplorer" data-settings-pane="display">
@@ -319,10 +346,29 @@
                   <label><input id="metricExplorerZeroY" type="checkbox" checked /> Start Y axis at 0</label>
                   <label><input id="metricExplorerShowGrid" type="checkbox" checked /> Show Y grid</label>
                   <label><input id="metricExplorerShowLabels" type="checkbox" /> Show value labels</label>
-                  <div class="row compact wrap">
-                    <button id="metricExplorerDownloadSvgBtn" type="button">Download SVG</button>
-                    <button id="metricExplorerDownloadCsvBtn" type="button">Download CSV</button>
-                  </div>
+                  <label><input id="metricExplorerShowErrorBars" type="checkbox" checked /> Enable error bars</label>
+                </div>
+                <div class="settingsTabPane" data-settings-content="metricExplorer" data-settings-pane="groups">
+                  <label class="autosaveSwitchWrap">
+                    <span>Enable grouping by groups</span>
+                    <span class="autosaveSwitch">
+                      <input id="metricExplorerGroupEnabled" type="checkbox" />
+                      <span class="autosaveSlider"></span>
+                    </span>
+                  </label>
+                  <label class="autosaveSwitchWrap">
+                    <span>Show legend</span>
+                    <span class="autosaveSwitch">
+                      <input id="metricExplorerGroupShowLegend" type="checkbox" checked />
+                      <span class="autosaveSlider"></span>
+                    </span>
+                  </label>
+                  <label>Bar distance within group
+                    <input id="metricExplorerGroupBarGap" type="range" min="0" max="0.8" step="0.01" value="0.12" />
+                    <div class="mono muted"><span id="metricExplorerGroupBarGapValue">0.12</span></div>
+                  </label>
+                  <div class="muted">When enabled, x-axis uses groups. Use the editor to define arbitrary legend series and assignments.</div>
+                  <div id="metricExplorerGroupSeriesMap" class="metricGroupSeriesMap"></div>
                 </div>
                 <div class="settingsTabPane" data-settings-content="metricExplorer" data-settings-pane="typography">
                   <div class="typographyGrid">
@@ -377,12 +423,24 @@
                       <input id="metricExplorerTitleText" type="text" placeholder="Default metric title" />
                     </label>
                     <label>X-axis label
-                      <input id="metricExplorerXAxisLabel" type="text" value="Sample" />
+                      <div id="metricExplorerXAxisLabelCombo" class="fontSizeCombo">
+                        <input id="metricExplorerXAxisLabel" type="text" value="Sample" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose x-axis label">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
                     </label>
                     <label>Y-axis label
-                      <input id="metricExplorerYAxisLabel" type="text" placeholder="Default metric label" />
+                      <div id="metricExplorerYAxisLabelCombo" class="fontSizeCombo">
+                        <input id="metricExplorerYAxisLabel" type="text" placeholder="Default metric label" />
+                        <button type="button" class="fontSizeComboToggle" aria-label="Choose y-axis label">▾</button>
+                        <div class="fontSizeComboMenu" hidden></div>
+                      </div>
                     </label>
                   </div>
+                </div>
+                <div class="row compact wrap metricExplorerDownloadBar">
+                  <button id="metricExplorerDownloadSvgBtn" type="button">Download SVG</button>
+                  <button id="metricExplorerDownloadCsvBtn" type="button">Download CSV</button>
                 </div>
               </aside>
             </div>
@@ -511,7 +569,30 @@
       </div>
     </div>
 
+    <div id="groupLegendEditorModal" class="legendModal hidden" role="dialog" aria-modal="true" aria-label="Grouping legend editor">
+      <div id="groupLegendEditorDialog" class="legendModalDialog">
+        <div class="legendModalHeader">
+          <strong>Grouping legend editor</strong>
+          <button id="groupLegendEditorCloseBtn" type="button" class="iconBtn" aria-label="Close legend editor">✕</button>
+        </div>
+        <div class="legendModalBody">
+          <div class="legendModalSection legendModalSectionLeft">
+            <div class="legendSectionTitle">Label editor</div>
+            <div class="legendAddRow">
+              <input id="groupLegendNewLabel" type="text" placeholder="New label" />
+              <button id="groupLegendAddBtn" type="button">Add Label</button>
+            </div>
+            <div id="groupLegendSeriesList" class="groupLegendSeriesList"></div>
+          </div>
+          <div class="legendModalSection legendModalSectionRight">
+            <div class="legendSectionTitle">Sample assigner</div>
+            <div id="groupLegendAssignmentList" class="groupLegendAssignmentList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <script src="/static/app.js?v=20260331-51"></script>
+    <script src="/static/app.js?v=20260331-73"></script>
   </body>
 </html>
